@@ -516,6 +516,7 @@ const PLAIN = {
   'quantitative T1 map': 'A map of numbers calculated from another scan, not a normal picture.',
   'too few slices for a 3D model': 'Too few pictures to cover the whole head.',
   'thick slices': 'Thick slices: the 3D surface would look stepped.',
+  'multi-frame file without slice positions': 'A multi-frame file that does not say where each slice sits, so it cannot be stacked into 3D.',
 };
 const plain = (r) => PLAIN[Object.keys(PLAIN).find((k) => r.replace(/^[-+\d.]+ |^excluded: /g, '').startsWith(k))];
 const ROLE = { model: ['3D model', 'ok'], neck: ['Neck', 'ok'], slices: ['Slices', 'info'], veins: ['Slices + veins', 'info'], none: ['Not used', 'off'] };

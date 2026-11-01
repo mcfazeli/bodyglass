@@ -47,22 +47,90 @@ class Series:
         }
 
 
+FRAME = "#frame="   # a frame of an enhanced multi-frame file is listed as "<path>#frame=<index>"
+
+
+def split_ref(ref: str) -> tuple[str, int | None]:
+    path, sep, i = ref.rpartition(FRAME)
+    return (path, int(i)) if sep and i.isdigit() else (ref, None)
+
+
+def frame_attr(ds, frame, keyword):
+    """An attribute of one frame: top level, else the frame's Per-Frame then the Shared Functional Group
+    (DICOM PS3.3 C.7.6.16; each group item holds one-item sequences such as PlanePositionSequence)."""
+    if frame is None or keyword in ds:
+        return getattr(ds, keyword, None)
+    pf = ds.get("PerFrameFunctionalGroupsSequence") or []
+    for item in ([pf[frame]] if frame < len(pf) else []) + list(ds.get("SharedFunctionalGroupsSequence") or [])[:1]:
+        for el in item:
+            if el.VR == "SQ" and len(el.value) and keyword in el.value[0]:
+                return el.value[0][keyword].value
+    return None
+
+
 def _val(ds, tag):
-    v = getattr(ds, tag, None)
+    return _conv(getattr(ds, tag, None))
+
+
+def _conv(v):
     if v is None:
         return None
-    if isinstance(v, pydicom.multival.MultiValue):
+    if isinstance(v, (list, pydicom.multival.MultiValue)):
         return [x if isinstance(x, str) else float(x) for x in v]
     if isinstance(v, (pydicom.valuerep.DSfloat, pydicom.valuerep.IS)):
         return float(v)
     return v if isinstance(v, (int, float)) else str(v)
 
 
-def scan_folder(root: str) -> list[Series]:
-    """Read headers only (no pixel data) of every DICOM file under root.
+def _enhanced_meta(ds, f):
+    """Classic header fields for frame f of an enhanced file, so scoring treats it like a single-frame series."""
+    m = {t: _conv(frame_attr(ds, f, t)) for t in HEADER_TAGS}
+    m["SequenceName"] = m["SequenceName"] or _conv(frame_attr(ds, f, "PulseSequenceName"))
+    m["EchoTime"] = m["EchoTime"] or _conv(frame_attr(ds, f, "EffectiveEchoTime"))
+    ti = _conv(frame_attr(ds, f, "InversionTimes"))
+    m["InversionTime"] = m["InversionTime"] or (ti[0] if isinstance(ti, list) and ti else ti)
+    ft = _conv(frame_attr(ds, f, "FrameType"))
+    if ft:
+        m["ImageType"] = list(ft) + (["PHASE"] if frame_attr(ds, f, "ComplexImageComponent") == "PHASE" else [])
+    echo = frame_attr(ds, f, "EchoPulseSequence")
+    if echo and not m["ScanningSequence"]:
+        m["ScanningSequence"] = {"GRADIENT": ["GR"], "SPIN": ["SE"], "BOTH": ["SE", "GR"]}.get(str(echo), []) \
+            + (["IR"] if frame_attr(ds, f, "InversionRecovery") == "YES" else [])
+    return m
 
-    shortcut: one file = one slice; Enhanced multi-frame MR (one file per series, e.g. Siemens XA, newer
-    Philips) is not read and its T1 is reported as 'not found'. Add frame splitting if a user's export needs it."""
+
+def enhanced_stacks(ds, path) -> list[tuple[str, list, dict]]:
+    """Split one enhanced multi-frame file into (uid, frame refs, meta) per stack: frames that differ only by
+    slice position. Echoes, stacks, time points, magnitude/phase or orientations become separate series.
+    shortcut: a series split over several enhanced files is merged by stack order; fine for one file per series."""
+    spatial = {0x00209057, 0x00200032}   # InStackPositionNumber, ImagePositionPatient
+    dims = [k for k, d in enumerate(ds.get("DimensionIndexSequence") or [])
+            if int(d.DimensionIndexPointer) not in spatial]
+    hv = lambda v: tuple(round(float(x), 3) if not isinstance(x, str) else x for x in v) \
+        if isinstance(v, (list, pydicom.multival.MultiValue)) else v
+    stacks: dict[str, list] = {}
+    for f in range(int(ds.NumberOfFrames or 1)):
+        dv = frame_attr(ds, f, "DimensionIndexValues")
+        dv = list(dv) if isinstance(dv, (list, pydicom.multival.MultiValue)) else [dv]
+        key = (tuple(dv[k] for k in dims if k < len(dv)),
+               *(hv(frame_attr(ds, f, kw)) for kw in ("StackID", "ImageOrientationPatient", "PixelSpacing",
+                                                       "EffectiveEchoTime", "FrameType", "ComplexImageComponent")))
+        stacks.setdefault(repr(key), []).append(f)
+    out, uid = [], str(ds.SeriesInstanceUID)
+    for n, k in enumerate(sorted(stacks)):
+        frames = stacks[k]
+        meta = _enhanced_meta(ds, frames[0])
+        meta["noGeometry"] = any(frame_attr(ds, f, t) is None for f in frames
+                                 for t in ("ImagePositionPatient", "ImageOrientationPatient", "PixelSpacing"))
+        if len(stacks) > 1:
+            meta["SeriesDescription"] = f"{meta.get('SeriesDescription') or 'Series'} (part {n + 1} of {len(stacks)})"
+        out.append((uid if len(stacks) == 1 else f"{uid}.{n + 1}", [f"{path}{FRAME}{f}" for f in frames], meta))
+    return out
+
+
+def scan_folder(root: str) -> list[Series]:
+    """Read headers only (no pixel data) of every DICOM file under root. Classic files are one slice each;
+    an enhanced multi-frame file (e.g. Siemens XA, newer Philips) is split into its stacks, one series each."""
     series: dict[str, Series] = {}
     for dirpath, _dirs, files in os.walk(root):
         for fn in files:
@@ -71,9 +139,15 @@ def scan_folder(root: str) -> list[Series]:
             path = os.path.join(dirpath, fn)
             try:
                 ds = pydicom.dcmread(path, stop_before_pixels=True,
-                                     specific_tags=HEADER_TAGS)
+                                     specific_tags=HEADER_TAGS + ["NumberOfFrames"])
+                if "NumberOfFrames" in ds and hasattr(ds, "Rows"):
+                    ds = pydicom.dcmread(path, stop_before_pixels=True)
+                    for uid, refs, meta in enhanced_stacks(ds, path):
+                        s = series.setdefault(uid, Series(uid=uid, meta=meta))
+                        s.files += refs
+                    continue
             except Exception:
-                continue  # not DICOM (DICOMDIR viewers, html, etc.)
+                continue  # not DICOM (DICOMDIR viewers, html, etc.) or a malformed multi-frame header
             uid = getattr(ds, "SeriesInstanceUID", None)
             if not uid or not hasattr(ds, "Rows"):
                 continue
@@ -109,6 +183,8 @@ def score_series(s: Series) -> None:
         score += pts
         why.append(f"{'+' if pts >= 0 else ''}{pts:g} {reason}")
 
+    if m.get("noGeometry"):
+        s.excluded = "multi-frame file without slice positions"
     if (m.get("Modality") or "MR") != "MR":
         s.excluded = "not MR"
     tokens = set(re.split(r"[^A-Z0-9*]+", text))

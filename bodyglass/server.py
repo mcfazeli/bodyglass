@@ -163,7 +163,7 @@ def run_neck(case_dir, folder, uid=None):
 def add_scan(folder, cases_root, cid=None):
     """'Add scan': sort a folder (brain exam, neck exam, or a whole export with both) and start the right work.
     Returns (reply, http code). shortcut: headers are read here and again by the pipeline (a few seconds)."""
-    r = neck.route(scan_folder(folder))
+    r = neck.route(series := scan_folder(folder))
     brain, nk = r["brain"], (r["neck"] if neck.available() else None)
     case_dir = os.path.join(cases_root, cid) if cid and read_manifest(cases_root, cid) else None
     desc = lambda s: s.meta.get("SeriesDescription") or "scan"
@@ -180,8 +180,10 @@ def add_scan(folder, cases_root, cid=None):
         if not start_neck(case_dir, folder, nk.uid):
             return {"error": BUSY}, 409
         return {"route": "neck", "neck": desc(nk)}, 200
+    hint = (" It holds a multi-frame DICOM file without slice positions, which BodyGlass can't read yet."
+            if any(s.excluded == "multi-frame file without slice positions" for s in series) else "")
     return {"error": "No usable scan found in this folder. BodyGlass needs a 3D T1 head scan or a sagittal neck scan "
-                     "(see 'Which scans are used?' for what each kind is good for)."}, 400
+                     "(see 'Which scans are used?' for what each kind is good for)." + hint}, 400
 
 
 def case_summary(cid, m):

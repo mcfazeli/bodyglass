@@ -5,38 +5,53 @@ import numpy as np
 import pydicom
 from scipy import ndimage
 
+from .dicom_scan import frame_attr, split_ref
+
+
+def _slices(files):
+    """(position, orientation, pixel spacing, thickness, pixels) per slice. A file path is one classic slice;
+    a "<path>#frame=<n>" reference is one frame of an enhanced multi-frame file, read once."""
+    out, cache = [], {}
+    for ref in files:
+        path, f = split_ref(ref)
+        d = cache[path] if path in cache else cache.setdefault(path, pydicom.dcmread(path))
+        at = lambda kw: frame_attr(d, f, kw)
+        if at("ImagePositionPatient") is None or at("ImageOrientationPatient") is None or at("PixelSpacing") is None:
+            if f is None:
+                continue
+            raise RuntimeError("This multi-frame DICOM file has no slice positions, so BodyGlass can't build "
+                               "a 3D model from it. Try a classic (one file per slice) export of the scan.")
+        px = d.pixel_array
+        px = px[f] if f is not None and px.ndim == 3 else px
+        out.append((np.array(at("ImagePositionPatient"), float), np.array(at("ImageOrientationPatient"), float),
+                    [float(x) for x in at("PixelSpacing")], float(at("SliceThickness") or 1.0),
+                    px.astype(np.float32) * float(at("RescaleSlope") or 1) + float(at("RescaleIntercept") or 0)))
+    return out
+
 
 def load_series(files: list[str]):
     """Return (data[k,j,i] float32, affine 4x4 voxel(i,j,k)->LPS mm)."""
-    dss = [pydicom.dcmread(f) for f in files]
-    dss = [d for d in dss if hasattr(d, "ImagePositionPatient")]
-    iop = np.array(dss[0].ImageOrientationPatient, float)
+    sl = _slices(files)
+    iop = sl[0][1]
     row_dir, col_dir = iop[:3], iop[3:]  # row_dir: +column index, col_dir: +row index
     normal = np.cross(row_dir, col_dir)
-    dss.sort(key=lambda d: float(np.dot(normal, np.array(d.ImagePositionPatient, float))))
+    sl.sort(key=lambda d: float(np.dot(normal, d[0])))
     # drop duplicate positions (e.g. multi-echo); keep first
     seen, uniq = set(), []
-    for d in dss:
-        key = round(float(np.dot(normal, np.array(d.ImagePositionPatient, float))), 3)
+    for d in sl:
+        key = round(float(np.dot(normal, d[0])), 3)
         if key not in seen:
             seen.add(key); uniq.append(d)
-    dss = uniq
-    ps = [float(x) for x in dss[0].PixelSpacing]  # [row spacing, col spacing]
-    p0 = np.array(dss[0].ImagePositionPatient, float)
-    if len(dss) > 1:
-        step = (np.array(dss[-1].ImagePositionPatient, float) - p0) / (len(dss) - 1)
-    else:
-        step = normal * float(getattr(dss[0], "SliceThickness", 1.0))
+    sl = uniq
+    ps = sl[0][2]  # [row spacing, col spacing]
+    p0 = sl[0][0]
+    step = (sl[-1][0] - p0) / (len(sl) - 1) if len(sl) > 1 else normal * sl[0][3]
     aff = np.eye(4)
     aff[:3, 0] = row_dir * ps[1]
     aff[:3, 1] = col_dir * ps[0]
     aff[:3, 2] = step
     aff[:3, 3] = p0
-    vol = np.stack([
-        d.pixel_array.astype(np.float32) * float(getattr(d, "RescaleSlope", 1) or 1)
-        + float(getattr(d, "RescaleIntercept", 0) or 0)
-        for d in dss
-    ])  # (k, rows=j, cols=i)
+    vol = np.stack([d[4] for d in sl])  # (k, rows=j, cols=i)
     return vol, aff
 
 
