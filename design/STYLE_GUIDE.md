@@ -13,7 +13,7 @@ there is no light theme. Keep the model the brightest thing on screen.
 
 | Token | Value | Role |
 |---|---|---|
-| `--fg` | `#e9edf5` | Main text |
+| `--fg` | `#e9edf5` | Main text (decided: change to `#e8edf5`, see Decisions) |
 | `--muted` | `#93a0b6` | Secondary text, section headings |
 | `--acc` | `#7cc4ff` | Accent: primary buttons, sliders, "on" states, progress |
 | `--glass` | `rgba(18,24,36,.62)` | Panel fill (with `blur(14px) saturate(140%)`) |
@@ -31,7 +31,7 @@ and are data, not UI chrome.
 `--measure #ffe066`, `--err #ff9aa5`, `--link #8cc8ff`, `--on-acc #08111e`, `--surface rgba(14,19,29,.95)`
 (modal fill, currently repeated at .90–.98 opacity in 14 rules), `--accent-soft rgba(124,196,255,.16)`
 (selected rows/tabs, currently .12/.14/.16/.2). Merge near-duplicates: `#8cc8ff`/`#8cd3ff` → `--link`;
-`#ffd58a`/`#ffd08a`/`#ffe2a8` → `--warn`/`--warn-fg`; `#e9edf5`/`#f2f5fa` → `--fg`.
+`#ffd58a`/`#ffd08a`/`#ffe2a8` → `--warn`/`--warn-fg`; `#e9edf5`/`#f2f5fa` → `--fg` (`#e8edf5`).
 
 ## Typography
 **Current:** system UI stack `-apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", Roboto`
@@ -83,9 +83,12 @@ on this computer."
   is out of date.
 - **Accent:** the app's `#7cc4ff` (`--acc`) is canonical. The mockups' `#5aa9ff` is superseded; update the
   mockups when they are next touched.
+- **Logo:** the mockups' treatment (`design/ux_mock/base.css` line 7) replaces the app's pink radial dot
+  (`style.css` line 11): a 20 × 20 px rounded square, `border-radius: 7px`,
+  `conic-gradient(from 200deg, #7cc4ff, #b49cff, #ff9cc0, #7cc4ff)` (accent blue → lavender `#b49cff` →
+  pink `#ff9cc0`), glow `box-shadow: 0 0 12px #7cc4ff66`.
+- **Text colour:** `--fg` becomes the mockups' `#e8edf5` (was `#e9edf5`; the difference is barely visible).
 
 ## Open questions
-1. Logo and text colour: the mockups use a conic-gradient logo and `#e8edf5` text; the app uses a pink radial
-   logo (`.logo`, `style.css` line 11) and `#e9edf5`. Proposed: the app's.
-2. `.gitignore` ignores every `screenshots/` folder, so golden screenshots under `design/` need a different
+1. `.gitignore` ignores every `screenshots/` folder, so golden screenshots under `design/` need a different
    folder name (proposed `shots/`) or an exception.
