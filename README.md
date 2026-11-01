@@ -173,7 +173,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and, for security issues, [SECURITY.md](S
 
 Planned work and known issues are tracked in [GitHub issues](https://github.com/mcfazeli/bodyglass/issues) and on
 the [project board](https://github.com/users/mcfazeli/projects/1). Current topics include testing on more Mac
-hardware, enhanced multi-frame DICOM, and better alignment of thick-slice scans.
+hardware and better alignment of thick-slice scans.
 
 ## Credits and licenses
 
