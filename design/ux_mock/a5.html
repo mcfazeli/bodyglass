@@ -1,0 +1,16 @@
+<link rel=stylesheet href=base.css><body><div class="top"><div class="brand"><span class="logo"></span>Bodyglass</div><div class="person"><span class="avatar">M</span><b>Me</b><span class="muted">· 2 exams</span><span class="muted">▾</span></div><span class="chip ok">✓ Detailed structures ready</span><div class="sp"></div><span class="btn">? </span><span class="btn">▶ Tour</span><span class="btn">⌘K Tools</span><div class="split"><span class="btn primary">＋ Add scan</span><span class="btn primary">▾</span></div></div>
+<img class=model src=model_back.png style="opacity:.3">
+<div class=card style="position:absolute;left:50%;transform:translateX(-50%);top:70px;width:720px;padding:18px 20px">
+ <div class=h>What’s in this exam (5 scans)</div><div class="muted small" style="margin-bottom:12px">The app chose these by itself from the file information. You can change the 3D choice.</div>
+ <div class=row style="align-items:flex-start;background:rgba(110,220,160,.08)"><span class="chip ok">3D model</span><div><b>MP2RAGE_UNI</b> <span class="muted small">· T1 3D, 256 slices, 1 mm</span>
+  <div class=small>Used to build your 3D model. It is a fine-grained 3D T1 scan, where brain tissue, fluid and skin are easiest to tell apart.</div></div></div>
+ <div class=row style="align-items:flex-start"><span class=chip>Slices</span><div><b>t2_spc_sag_1mm</b> <span class="muted small">· T2</span>
+  <div class=small>Shown on the slices (Scans → T2): fluid looks bright. Not used for the 3D model because T1 separates tissues better. <span style="color:#9fd3ff">Use for 3D instead</span></div></div></div>
+ <div class=row style="align-items:flex-start"><span class=chip>Slices</span><div><b>t2_tirm_tra_dark-fluid</b> <span class="muted small">· FLAIR, 30 slices</span>
+  <div class=small>Shown on the slices (Scans → FLAIR). Too few slices (30, 5 mm apart) to build a 3D shape.</div></div></div>
+ <div class=row style="align-items:flex-start"><span class=chip>Slices</span><div><b>ep2d_diff_mddw_b1000_TRACEW · ADC</b> <span class="muted small">· diffusion</span>
+  <div class=small>Shown on the slices (Scans → DWI, ADC). They show how water moves, blurred and low-detail, so they can’t build a 3D model.</div></div></div>
+ <div class=row style="align-items:flex-start;opacity:.75"><span class=chip style="color:#cbd5e1;background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.12)">Not used</span><div><b>T1 SAG 3D_MPR_Axial</b> <span class="muted small">· reformat (example)</span>
+  <div class=small>A copy the scanner rebuilt from another scan, so it adds nothing new. <span style="color:#9fd3ff">Include anyway</span></div></div></div>
+ <div class="small muted" style="margin-top:10px">SWI scans show veins: they become the vein tree (Layers → Veins). Technical details ›</div></div>
+<div class="disc">Educational only, not for diagnosis. Everything stays on this Mac.</div></body>

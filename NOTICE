@@ -1,0 +1,23 @@
+BodyGlass
+Copyright 2026 The BodyGlass contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+BodyGlass is an educational tool. It is not a medical device and must not be used
+for diagnosis or treatment decisions.
+
+This product includes third-party software:
+
+  three.js (r186), in bodyglass/web/vendor/three/
+  Copyright (c) 2010-2026 three.js authors
+  Licensed under the MIT License; the full text is in bodyglass/web/vendor/three/LICENSE.
+
+bodyglass/synthstrip.py is an independent re-implementation of the SynthStrip network
+definition so that the published weights can be loaded:
+  Hoopes A, Mora JS, Dalca AV, Fischl B, Hoffmann M. SynthStrip: Skull-Stripping for
+  Any Brain Image. NeuroImage 260, 119474 (2022). https://synthstrip.io
+No SynthStrip code or weights are included in this repository.
+
+Model weights, Python packages, FastSurfer and TotalSegmentator are not included in this
+repository. They are downloaded by install.sh or by the app, each under its own license;
+see "Credits and licenses" in README.md.
