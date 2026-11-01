@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>BodyGlass</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:,">
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<header id="topbar">
+  <div class="brand"><span class="logo"></span>BodyGlass <button id="btnPerson" class="ghost person" title="My body: your saved models">My body ▾</button></div>
+  <div class="actions">
+    <button id="btnChat" class="ghost" title="Ask AI about your model (off until you turn it on)">✦ Ask AI</button>
+    <button id="btnHelp" class="ghost round" title="Help and shortcuts (?)">?</button>
+    <button id="btnTour" class="ghost" title="Guided tour (G)">▶ Tour</button>
+    <div class="menuwrap"><button id="btnTools" class="ghost" title="Measure, export, compare">Tools ▾</button>
+      <div id="toolsMenu" class="glass hidden">
+        <button id="mMeasure" class="mi"><span>📏 Measure a distance</span><kbd>M</kbd></button>
+        <button id="mExport" class="mi"><span>⬇ Export for 3D printing…</span><kbd>E</kbd></button>
+        <button id="mExample" class="mi"><span>⇄ Compare with an example brain</span><kbd>X</kbd></button>
+      </div></div>
+    <button id="btnAuto" class="ghost" title="Slow turntable (T)">⟲ Turntable</button>
+    <button id="btnReset" class="ghost" title="Reset view (R)">Reset view</button>
+    <div class="split menuwrap"><button id="btnAdd" title="Add a head or neck MRI folder, or a whole export: it is sorted automatically">＋ Add scan</button><button id="btnAddMore" title="More ways to add">▾</button>
+      <div id="addMenu" class="glass hidden">
+        <button id="aToMe" class="mi"><span>＋ Add a scan to <b class="pname">My body</b></span></button>
+        <button id="aNew" class="mi"><span>👤 New person…</span></button>
+        <button id="aExample" class="mi"><span>✨ Open the example volunteer</span></button>
+      </div></div>
+  </div>
+</header>
+
+<nav id="rail" class="glass">
+  <button data-tab="explore" title="Explore: search, views and parts"><i>⌕</i>Explore</button>
+  <button data-tab="layers" title="Layers and structures"><i>◧</i>Layers</button>
+  <button data-tab="scans" title="Which scans are used"><i>▤</i>Scans</button>
+  <button data-tab="about" title="About BodyGlass"><i>ⓘ</i>About</button>
+</nav>
+<aside id="panel" class="glass">
+  <section data-tab="explore" id="exploreSection">
+    <input id="search" type="search" placeholder="Search a body part… (e.g. hippocampus, C5)" autocomplete="off">
+    <div id="searchResults"></div>
+    <h3>Views</h3>
+    <div id="presets" class="chips"></div>
+    <h3>Parts <span class="hint">eye = show / hide</span></h3>
+    <div id="partList"></div>
+  </section>
+  <section data-tab="layers">
+    <h3>Layers <span class="hint">peel from outside in</span></h3>
+    <input id="peel" type="range" min="0" max="4" step="1" value="1">
+    <div class="peel-labels"><span>Skin</span><span>Skull</span><span>Brain</span><span>WM</span><span>Deep</span></div>
+    <div id="layers"></div>
+  </section>
+  <section data-tab="layers" id="structSection" class="hidden">
+    <h3>Structures <span class="hint">click a name or the model</span></h3>
+    <div class="toggles"><label><input type="checkbox" id="lblToggle" checked> Labels</label><label><input type="checkbox" id="lobeColors" checked> Colour by region</label></div>
+    <div id="structList"></div>
+  </section>
+  <section data-tab="scans">
+    <h3>Scan</h3>
+    <div id="seriesInfo" class="muted">No scan loaded</div>
+    <details id="seriesDetails"><summary>Which scans are used?</summary><div id="seriesPlain"></div>
+      <details id="seriesTechBox" class="tech"><summary>Technical details</summary><div id="seriesTech"></div></details></details>
+  </section>
+  <section data-tab="scans" id="scansSection" class="hidden">
+    <h3>Scans <span class="hint">shown on the slices</span></h3>
+    <div id="scanChips" class="chips"></div>
+    <div id="scanOpts" class="hidden">
+      <div id="seqMode" class="seg"><button data-m="replace">Instead of T1</button><button data-m="blend">Colour over T1</button></div>
+      <div id="seqOpRow" class="slice-row hidden"><span class="muted">Strength <b id="seqOpacityVal">60%</b></span><input type="range" id="seqOpacity" min="0.1" max="1" step="0.05" value="0.6"></div>
+      <button id="btnCompare" class="ghost small">Compare with T1…</button>
+    </div>
+    <div id="scanNote" class="small muted"></div>
+  </section>
+  <section data-tab="about" id="aboutSection">
+    <h3>About BodyGlass</h3>
+    <p class="small">BodyGlass turns your own MRI into a 3D model you can explore. Everything is computed on this computer; your scans are never uploaded.</p>
+    <p class="small muted">Educational use only. It is not a medical device and must not be used for diagnosis or treatment decisions. Shapes are computer estimates; ask your doctor about your results.</p>
+    <p class="small">Built with open tools: SynthStrip (brain outline), FastSurfer (brain structures), TotalSegmentator (neck), three.js (3D view).</p>
+    <label class="check"><input type="checkbox" id="wheelZoom"> Two-finger swipe zooms (instead of moving)</label>
+    <button id="aboutKeys" class="ghost small">Keyboard shortcuts (?)</button> <button id="aboutTour" class="ghost small">Guided tour (G)</button>
+  </section>
+</aside>
+
+<div id="sliceBar" class="glass">
+  <span class="sbtitle">Slices</span>
+  <div class="slice-row"><label><input type="checkbox" data-plane="axial"> Axial <span class="snum" data-num="axial"></span></label><input type="range" data-pos="axial"></div>
+    <div class="slice-row"><label><input type="checkbox" data-plane="coronal"> Coronal <span class="snum" data-num="coronal"></span></label><input type="range" data-pos="coronal"></div>
+    <div class="slice-row"><label><input type="checkbox" data-plane="sagittal"> Sagittal <span class="snum" data-num="sagittal"></span></label><input type="range" data-pos="sagittal"></div>
+  <label class="check cutchk" title="Cut away the 3D layers at the active slices"><input type="checkbox" id="cutaway"> Cut away</label>
+  <div class="menuwrap"><button id="sliceMore" class="ghost small" title="Cut-away, colours and contrast">⋯</button>
+    <div id="sliceOpts" class="glass hidden">
+    <label class="check"><input type="checkbox" id="keepDeep" checked> Keep deep structures whole in the cut</label>
+    <div id="overlayRow">
+      <label class="check"><input type="checkbox" id="labelOverlay"> Colour structures on the slices</label>
+      <div class="slice-row"><span class="muted">Label opacity <b id="labelOpacityVal">50%</b></span><input type="range" id="labelOpacity" min="0.05" max="1" step="0.05" value="0.5"></div>
+    </div>
+    <div id="overlayNote" class="small muted"></div>
+    <div class="slice-row"><span class="muted">Contrast</span><input type="range" id="contrast" min="0.5" max="2.5" step="0.05" value="1.2"></div>
+    </div></div>
+</div>
+
+<aside id="info" class="glass hidden">
+  <button id="infoClose" class="x">×</button>
+  <div class="swatch" id="infoSwatch"></div>
+  <h2 id="infoTitle"></h2>
+  <div id="infoBadge" class="badge">quick estimate</div>
+  <p id="infoText"></p>
+  <p id="infoParcel" class="small"></p>
+  <p id="infoExtra" class="muted small"></p>
+  <div class="infobtns"><button id="infoFocus" class="ghost small" title="Orbit around this part (F)">◎ Focus</button><button id="infoHide" class="ghost small" title="Hide this part">Hide</button><button id="infoIsolate" class="ghost small hidden">Isolate</button><button id="infoAsk" class="ghost small" title="Ask AI about this part">✦ Ask AI</button></div>
+</aside>
+
+<div id="labels"></div>
+<div id="toasts"></div>
+<div id="regionBar" class="seg glass hidden" title="Frame a region"><button data-r="head">Head</button><button data-r="neck">Neck</button><button data-r="both">Head + neck</button></div>
+<div id="focusTag" class="glass hidden"></div>
+<div id="hint" class="glass hidden"><button id="hintClose" class="x">×</button><b>Move around</b>
+  <dl><dt>Drag</dt><dd>Rotate</dd><dt>Two-finger swipe · right-drag · ⇧-drag</dt><dd>Move (pan)</dd><dt>Pinch · scroll wheel</dt><dd>Zoom</dd>
+  <dt>Double-click a part · F</dt><dd>Orbit around it</dd><dt>0 · R</dt><dd>Fit all · reset view</dd></dl></div>
+
+<div id="insets">
+  <figure><canvas id="c-axial"></canvas><figcaption id="cap-axial">Axial</figcaption></figure>
+  <figure><canvas id="c-coronal"></canvas><figcaption id="cap-coronal">Coronal</figcaption></figure>
+  <figure><canvas id="c-sagittal"></canvas><figcaption id="cap-sagittal">Sagittal</figcaption></figure>
+</div>
+
+<aside id="compare" class="glass hidden">
+  <button id="cmpClose" class="x">×</button>
+  <div class="cmpbar">
+    <div id="cmpSeq" class="chips"></div>
+    <div id="cmpPlane" class="seg"><button data-p="axial">Axial</button><button data-p="coronal">Coronal</button><button data-p="sagittal">Sagittal</button></div>
+    <div id="cmpMode" class="seg"><button data-m="side">Side by side</button><button data-m="swipe">Swipe</button></div>
+  </div>
+  <div class="cmpimgs">
+    <figure><canvas id="cmpL"></canvas><figcaption class="cl">T1</figcaption><figcaption class="cr" id="cmpRightLblSwipe"></figcaption></figure>
+    <figure id="cmpRfig"><canvas id="cmpR"></canvas><figcaption class="cl" id="cmpRightLbl"></figcaption></figure>
+  </div>
+  <div class="cmpfoot"><span id="cmpCap" class="snum"></span><span class="muted small">Drag up/down or scroll to move through slices<span class="swipehint"> · drag sideways to swipe</span></span></div>
+  <p id="cmpText"></p>
+  <p id="cmpAlign" class="muted small"></p>
+  <p class="muted small">Educational use only, not for diagnosis.</p>
+</aside>
+
+<aside id="help" class="glass hidden">
+  <button id="helpClose" class="x">×</button>
+  <h2>Getting around</h2>
+  <div class="hgrid">
+    <section><h3>3D view</h3>
+      <dl><dt>Drag</dt><dd>Rotate</dd><dt>Two-finger swipe</dt><dd>Move (pan)</dd><dt>Right-drag / ⇧-drag</dt><dd>Move (pan)</dd><dt>Pinch / mouse wheel</dt><dd>Zoom</dd><dt>Click</dt><dd>Name a part</dd><dt>Double-click / F</dt><dd>Orbit around that part</dd><dt>0</dt><dd>Fit everything (incl. neck)</dd></dl>
+      <h3 style="margin-top:14px">Tools menu</h3>
+      <dl><dt>Measure</dt><dd>Click two points (3D or slices)</dd><dt>Export</dt><dd>STL / 3MF for 3D printing</dd><dt>Example</dt><dd>Side by side, overlay, volumes</dd><dt>＋ Add scan</dt><dd>Head or neck MRI folder, or a whole export: sorted automatically. A neck adds vertebrae C1–T1, discs and spinal cord</dd><dt>My body</dt><dd>Saved models: open, rename, delete, Show in Finder</dd><dt>Left rail</dt><dd>Explore (search, views) · Layers · Scans · About</dd></dl></section>
+    <section><h3>Slice pictures</h3>
+      <dl><dt>Drag up / down</dt><dd>Scrub through slices</dd><dt>Scroll / swipe</dt><dd>One slice at a time</dd><dt>Click</dt><dd>Move cross-hairs</dd><dt>Hover</dt><dd>Structure name, ADC value</dd></dl>
+      <h3 style="margin-top:14px">Other scans</h3>
+      <dl><dt>Scans chips</dt><dd>FLAIR, T2, SWI, DWI… on the slices</dd><dt>Instead / Colour</dt><dd>Swap the picture, or tint the T1</dd><dt>Compare</dt><dd>Side by side or swipe</dd></dl></section>
+    <section><h3>Keys</h3>
+      <dl><dt>1 – 5</dt><dd>Peel layers</dd><dt>↑ ↓ / PgUp PgDn</dt><dd>Slice ±1 / ±10</dd><dt>O</dt><dd>Colour slices</dd><dt>S / ⇧S</dt><dd>Next / previous scan</dd><dt>C</dt><dd>Compare with T1</dd><dt>V</dt><dd>Vein tree on/off</dd><dt>G</dt><dd>Guided tour (← → to step)</dd><dt>M / E / X</dt><dd>Measure / Export / Example</dd><dt>L</dt><dd>3D labels on/off</dd><dt>R / 0 / F</dt><dd>Reset / fit all / focus</dd><dt>⌘K</dt><dd>Find any command or part</dd><dt>T</dt><dd>Turntable</dd><dt>?</dt><dd>This help</dd><dt>Esc</dt><dd>Close cards</dd></dl></section>
+  </div>
+  <p class="small muted">Everything runs on this computer. Educational use only, not for diagnosis.</p>
+</aside>
+
+<div id="tour" class="glass hidden">
+  <div class="tourhead"><span id="tourStep" class="snum"></span><span id="tourDots"></span><button id="tourVoice" class="ghost small hidden" title="Read aloud with the Mac's built-in voice (offline)">🔊 Read aloud</button></div>
+  <h2 id="tourTitle"></h2><p id="tourText"></p>
+  <div class="tourbtns"><button id="tourExit" class="ghost small">Exit tour</button><span></span><button id="tourBack" class="ghost small">← Back</button><button id="tourNext" class="small">Next →</button></div>
+</div>
+
+<aside id="export" class="glass hidden">
+  <button id="expClose" class="x">×</button>
+  <h2>Export for 3D printing</h2>
+  <div id="expList"></div>
+  <div class="seg expfmt"><label><input type="radio" name="expfmt" value="stl" checked> STL</label><label><input type="radio" name="expfmt" value="3mf"> 3MF</label></div>
+  <p class="small muted">The model is made solid and watertight on this computer and saved life size in millimetres (1 unit = 1 mm).
+    <b>Printing tips:</b> a whole brain is about 14 × 17 × 14 cm, so most home printers need it scaled down (try 50–70 %) or split. Use supports,
+    0.2 mm layers and 10–15 % infill; small parts such as the hippocampus print well at 100–200 %. Touching parts are merged into one solid piece.
+    This is an educational model, not for planning treatment.</p>
+  <div class="tourbtns"><span id="expMsg" class="small"></span><button id="expGo" class="small">Export</button></div>
+</aside>
+
+<div id="exBar" class="glass hidden">
+  <b>Example brain</b>
+  <div id="exMode" class="seg"><button data-m="side">Side by side</button><button data-m="overlay">Overlay</button></div>
+  <button id="exVolumes" class="ghost small">Volume table</button>
+  <span id="exNote" class="small muted"></span>
+  <button id="exClose" class="ghost small">Close</button>
+</div>
+<div id="exTagYou" class="extag">Your scan</div><div id="exTagEx" class="extag ex">Example brain</div>
+<aside id="exTable" class="glass hidden">
+  <button id="exTableClose" class="x">×</button>
+  <h2>Volumes: your scan and one example brain</h2>
+  <p class="warn"><b>Not a diagnosis.</b> These are rough computer estimates. Healthy brains differ a lot in size and shape, and one example person is not a normal range. Differences here do not mean anything is wrong. Ask your doctor about your results.</p>
+  <div class="tblwrap"><table><thead><tr><th>Structure (both sides)</th><th>Yours, mL</th><th>Example, mL</th><th>Yours, % of brain</th><th>Example, % of brain</th></tr></thead><tbody id="exRows"></tbody></table></div>
+  <p id="exCredit" class="small muted"></p>
+</aside>
+
+<aside id="chat" class="glass hidden" aria-label="Ask AI">
+  <header class="chathead">
+    <h2>Ask AI</h2>
+    <div class="menuwrap"><button id="modelBtn" class="modelbtn hidden" title="Choose who answers"></button><div id="modelMenu" class="glass hidden"></div></div>
+    <span class="grow"></span>
+    <button id="chatHist" class="ghost icon hidden" title="Past chats">🕘</button>
+    <button id="chatNew" class="ghost icon hidden" title="New chat">✎</button>
+    <button id="chatClose" class="ghost icon" title="Close (you can keep using BodyGlass; setup keeps going)">×</button>
+  </header>
+  <div id="histList" class="hidden"></div>
+  <div id="aiWelcome" class="hidden">
+    <p class="lead">Ask questions about your scan in plain words, for example <i>"What does the hippocampus do?"</i>, <i>"What is in this slice?"</i> or <i>"Explain my report."</i> Choose how:</p>
+    <div class="tile" id="tileLocal"><h3>🔒 Private, on this Mac</h3><p id="tlDesc" class="small"></p><div id="tlProg"></div><div class="tilebtns"><button id="btnSetup">Set up</button></div></div>
+    <div class="tile" id="tileCloud"><h3>☁ Use my ChatGPT</h3><p class="small">Uses your ChatGPT Plus or Pro plan, no setup. What you send goes to OpenAI.</p><div id="tcMsg" class="small"></div><div class="tilebtns"><button id="btnCgIn" class="ghost">Sign in with ChatGPT</button></div></div>
+  </div>
+  <div id="chatBody" class="hidden"><div id="chatLog"></div><div id="suggest"></div></div>
+  <div id="cgConsent" class="tile hidden"><h3>☁ Before you use ChatGPT</h3>
+    <p class="small">Your question and the items shown with it as chips (for example a part name, its volume, a picture or your report) are sent to OpenAI to get an answer. Nothing else from your scan leaves this Mac. You can remove any item before sending.</p>
+    <div class="tilebtns"><button id="cgOk">Use ChatGPT</button><button id="cgNo" class="ghost">Stay private</button></div></div>
+  <div id="reportBox" class="hidden"><textarea id="reportText" rows="6" maxlength="12000" placeholder="Paste your radiology report here (or drop a .txt file)…"></textarea>
+    <div class="tilebtns"><button id="reportGo">Explain in plain words</button><button id="reportCancel" class="ghost">Cancel</button></div></div>
+  <div id="composer" class="hidden">
+    <div id="chips"></div>
+    <div id="sentLine" class="small muted"></div>
+    <div class="compose">
+      <div class="menuwrap"><button id="attachBtn" class="ghost icon" title="Add a picture or your report">📎</button>
+        <div id="attachMenu" class="glass hidden">
+          <button class="mi" data-a="axial"><span>🖼 Current slice: axial</span></button>
+          <button class="mi" data-a="coronal"><span>🖼 Current slice: coronal</span></button>
+          <button class="mi" data-a="sagittal"><span>🖼 Current slice: sagittal <small class="warn">may show your face</small></span></button>
+          <button class="mi" data-a="snap"><span>📷 Snapshot of the 3D view</span></button>
+          <button class="mi" data-a="file"><span>📁 Picture from a file…</span></button>
+          <button class="mi" data-a="report"><span>📄 My report (paste text)…</span></button>
+        </div></div>
+      <textarea id="chatQ" rows="1" maxlength="4000" placeholder="Ask about your scan…"></textarea>
+      <button id="sendBtn" class="send" title="Send (Return)">↑</button>
+    </div>
+  </div>
+  <div id="exactBox" class="hidden"><div class="small"><b>Exactly this is sent to OpenAI</b> (plus any picture shown above):</div><pre id="exactText"></pre><button id="exactClose" class="ghost small">Close</button></div>
+  <p class="small muted chatdisc">Educational only, not a diagnosis. AI can be wrong: ask your doctor about your results.</p>
+  <input type="file" id="imgFile" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+</aside>
+
+<div id="aiModels" class="glass hidden">
+  <button class="x" id="aimClose">×</button><h2>Manage models</h2>
+  <p class="small">Private models run on this Mac. BodyGlass goes online only for a download you start (from Hugging Face); chatting with a downloaded model is offline. Downloads are checked file by file and keep going if you close this window.</p>
+  <div id="aimList"></div>
+  <div class="libfoot small">Folder: <code id="aimPath"></code><br>
+    <button id="aimCheck" class="ghost small">Check for new models</button> <span id="aimCheckMsg" class="muted"></span></div>
+</div>
+
+<div id="measBar" class="glass hidden"><span id="measText"></span><button id="measClear" class="ghost small">Clear</button><button id="measDone" class="ghost small">Done</button></div>
+
+<div id="library" class="glass hidden">
+  <button class="x" id="libClose">×</button><h2>My body</h2>
+  <div id="libList"></div>
+  <div class="libfoot"><b>Saved automatically on this computer. No “Save” needed.</b><br>
+    <span class="small">Folder: <code id="libPath"></code> <button class="link" id="libReveal">Show in Finder</button></span><br>
+    <span class="small">Delete removes the 3D models only, never your scan folders.</span></div>
+</div>
+<div id="loading" class="glass"><div class="spinner"></div><div id="loadingMsg">Loading…</div><div class="bar"><i id="loadingBar"></i></div><ol id="steps" class="hidden"></ol></div>
+<div id="welcome" class="glass hidden">
+  <h1><span class="logo"></span>Welcome to BodyGlass</h1>
+  <p>See inside your own body. BodyGlass turns an MRI into a 3D model you can turn, peel and explore. Everything is computed on this computer; nothing is uploaded.</p>
+  <div class="wbtns"><button id="wAdd">＋ Add your first scan</button><button id="wExample" class="ghost">✨ Explore the example volunteer</button></div>
+  <p class="small muted">Choose the folder with your MRI pictures (DICOM). A whole export from your clinic is fine: BodyGlass finds the head scan and, if there is one, the neck scan.</p>
+  <p class="small muted">Educational use only, not for diagnosis.</p>
+</div>
+<div id="palette" class="glass hidden"><input id="palIn" placeholder="Type a command or a body part…" autocomplete="off"><div id="palList"></div></div>
+
+<footer id="disclaimer">Educational use only. This is not a medical device and must not be used for diagnosis or treatment decisions. Shapes are computer estimates. Ask your doctor about your results. Your scans stay on this computer. Ask AI is off until you choose it; with ChatGPT, only what its chips show is sent.</footer>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

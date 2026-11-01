@@ -1,0 +1,484 @@
+{
+ "version": 1,
+ "models": [
+  {
+   "id": "qwen3.5-4b",
+   "name": "Qwen3.5-4B",
+   "purpose": "Private assistant that reads text and pictures. Right for Macs with 16 GB of memory or less.",
+   "repo": "Qwen/Qwen3.5-4B",
+   "runtime": "mlx_vlm",
+   "bits": [
+    4
+   ],
+   "ramGB": {
+    "4": 4.5
+   },
+   "diskGB": {
+    "4": 3.1
+   },
+   "license": "Apache-2.0.",
+   "prebuilt": {
+    "repo": "mlx-community/Qwen3.5-4B-4bit",
+    "revision": "0e7ffd5c629ef7719d4cbc04069232580bfa9d9c",
+    "files": [
+     {
+      "path": "chat_template.jinja",
+      "size": 7756,
+      "sha256": null,
+      "blob": "a585dec894e63da457d9440ec6aa7caa16d20860"
+     },
+     {
+      "path": "config.json",
+      "size": 3366,
+      "sha256": null,
+      "blob": "cb3e1a878a5c4a0505e0c9967da45820b2ca6bd3"
+     },
+     {
+      "path": "model.safetensors",
+      "size": 3034300695,
+      "sha256": "5fb9acd0246866381cf8c5c354c6db1019f6498eec4ccb4f5edcc71ffeacb2db",
+      "blob": "7af3bae82d3db640cac2b6e5b5263ac2c1681ab4"
+     },
+     {
+      "path": "model.safetensors.index.json",
+      "size": 101944,
+      "sha256": null,
+      "blob": "40196ba58595ef9b3fad25a8a6daf3288b953c19"
+     },
+     {
+      "path": "preprocessor_config.json",
+      "size": 390,
+      "sha256": null,
+      "blob": "2ea84a437d448ff71b08df68fdd949d5cc4ebb64"
+     },
+     {
+      "path": "processor_config.json",
+      "size": 1300,
+      "sha256": null,
+      "blob": "7ad6acdf4203f22b7b990e36ccc3a1fe38563d5e"
+     },
+     {
+      "path": "tokenizer.json",
+      "size": 19989343,
+      "sha256": "87a7830d63fcf43bf241c3c5242e96e62dd3fdc29224ca26fed8ea333db72de4",
+      "blob": "67741b04f23bfdb46501f748ce27865ec82eccfb"
+     },
+     {
+      "path": "tokenizer_config.json",
+      "size": 1139,
+      "sha256": null,
+      "blob": "a068e2468cff426a9b105006e74e044030a6faf4"
+     },
+     {
+      "path": "video_preprocessor_config.json",
+      "size": 385,
+      "sha256": null,
+      "blob": "3ba673a5ad7d4d13f54155ecd38b2a94a6dac8fe"
+     },
+     {
+      "path": "vocab.json",
+      "size": 6722759,
+      "sha256": null,
+      "blob": "0aa0ce0658d60ac4a5d609f4eadb0e8e43514176"
+     }
+    ]
+   },
+   "vision": true,
+   "revision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
+   "files": [
+    {
+     "path": "LICENSE",
+     "size": 11544,
+     "sha256": null,
+     "blob": "f938136e3adacfd92be087f6e113b5d6d97f678f"
+    },
+    {
+     "path": "README.md",
+     "size": 77661,
+     "sha256": null,
+     "blob": "7950a3aadf378cd13758097bc52f0ed849a59007"
+    },
+    {
+     "path": "chat_template.jinja",
+     "size": 7756,
+     "sha256": null,
+     "blob": "a585dec894e63da457d9440ec6aa7caa16d20860"
+    },
+    {
+     "path": "config.json",
+     "size": 3161,
+     "sha256": null,
+     "blob": "557d961b205319c6a7da5f757f565b69b3967b7d"
+    },
+    {
+     "path": "merges.txt",
+     "size": 3353259,
+     "sha256": null,
+     "blob": "a494e019ca1502219fd0128658b979e5f05ae8e8"
+    },
+    {
+     "path": "model.safetensors-00001-of-00002.safetensors",
+     "size": 5329398688,
+     "sha256": "26a93f066e1916adb13453dae5a0c707c0fbc71299ed98779571a907b8e74c61",
+     "blob": "d2e1801a99c9c1618c526812e779d9543df84891"
+    },
+    {
+     "path": "model.safetensors-00002-of-00002.safetensors",
+     "size": 3990429408,
+     "sha256": "cb544bd9bfae93dc59b0f22b292f5933573854a7f9b97835c67060d7d910e188",
+     "blob": "8fbeeec18827d3b20e3df1dc0abf94f7e85bcef1"
+    },
+    {
+     "path": "model.safetensors.index.json",
+     "size": 76196,
+     "sha256": null,
+     "blob": "fddda6039f7c1d17260c9e923b8a72fd025d9a86"
+    },
+    {
+     "path": "preprocessor_config.json",
+     "size": 390,
+     "sha256": null,
+     "blob": "2ea84a437d448ff71b08df68fdd949d5cc4ebb64"
+    },
+    {
+     "path": "tokenizer.json",
+     "size": 12807982,
+     "sha256": "5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42",
+     "blob": "a73a846725794819aa6e1c9e97d8dc9671c2006d"
+    },
+    {
+     "path": "tokenizer_config.json",
+     "size": 16710,
+     "sha256": null,
+     "blob": "eda48d3e75a8e59a8479ee4ec8b37f76e711d9c1"
+    },
+    {
+     "path": "video_preprocessor_config.json",
+     "size": 385,
+     "sha256": null,
+     "blob": "3ba673a5ad7d4d13f54155ecd38b2a94a6dac8fe"
+    },
+    {
+     "path": "vocab.json",
+     "size": 6722759,
+     "sha256": null,
+     "blob": "0aa0ce0658d60ac4a5d609f4eadb0e8e43514176"
+    }
+   ],
+   "default": true,
+   "medical": false
+  },
+  {
+   "id": "qwen3.5-9b",
+   "name": "Qwen3.5-9B",
+   "purpose": "Private assistant that reads text and pictures. Sharper answers; for Macs with 24 GB of memory or more.",
+   "repo": "Qwen/Qwen3.5-9B",
+   "runtime": "mlx_vlm",
+   "bits": [
+    4
+   ],
+   "ramGB": {
+    "4": 8.5
+   },
+   "diskGB": {
+    "4": 6.0
+   },
+   "license": "Apache-2.0.",
+   "prebuilt": {
+    "repo": "mlx-community/Qwen3.5-9B-4bit",
+    "revision": "8b2b98c00a6b4d291155e4890773ca8f769aee53",
+    "files": [
+     {
+      "path": "README.md",
+      "size": 666,
+      "sha256": null,
+      "blob": "3c2aeb25cdf23c52dfa032b50bf8a4a07e4e2591"
+     },
+     {
+      "path": "chat_template.jinja",
+      "size": 7756,
+      "sha256": null,
+      "blob": "a585dec894e63da457d9440ec6aa7caa16d20860"
+     },
+     {
+      "path": "config.json",
+      "size": 3331,
+      "sha256": null,
+      "blob": "0435ae3f4b3c8b907f7359a2f8f7150d316f3435"
+     },
+     {
+      "path": "model-00001-of-00002.safetensors",
+      "size": 5349771222,
+      "sha256": "a68b87558c6ef43f74c2bd63ce7e9092ceddc3101f3def0030774bae5f42aadd",
+      "blob": "ddb369e12da7a96c2b31421b6e7e400911eb7415"
+     },
+     {
+      "path": "model-00002-of-00002.safetensors",
+      "size": 600449850,
+      "sha256": "b0a770bf8469c7f3f18756a0e0283f1c1174344a83e059a4e483f6af4907352d",
+      "blob": "806973de6e6e2e413093b5717ac7ea1bde400466"
+     },
+     {
+      "path": "model.safetensors.index.json",
+      "size": 123592,
+      "sha256": null,
+      "blob": "d366fa524ccd8f4ed93a67c7857597dc56172b92"
+     },
+     {
+      "path": "preprocessor_config.json",
+      "size": 390,
+      "sha256": null,
+      "blob": "2ea84a437d448ff71b08df68fdd949d5cc4ebb64"
+     },
+     {
+      "path": "processor_config.json",
+      "size": 1300,
+      "sha256": null,
+      "blob": "7ad6acdf4203f22b7b990e36ccc3a1fe38563d5e"
+     },
+     {
+      "path": "tokenizer.json",
+      "size": 19989343,
+      "sha256": "87a7830d63fcf43bf241c3c5242e96e62dd3fdc29224ca26fed8ea333db72de4",
+      "blob": "67741b04f23bfdb46501f748ce27865ec82eccfb"
+     },
+     {
+      "path": "tokenizer_config.json",
+      "size": 1139,
+      "sha256": null,
+      "blob": "a068e2468cff426a9b105006e74e044030a6faf4"
+     },
+     {
+      "path": "video_preprocessor_config.json",
+      "size": 385,
+      "sha256": null,
+      "blob": "3ba673a5ad7d4d13f54155ecd38b2a94a6dac8fe"
+     },
+     {
+      "path": "vocab.json",
+      "size": 6722759,
+      "sha256": null,
+      "blob": "0aa0ce0658d60ac4a5d609f4eadb0e8e43514176"
+     }
+    ]
+   },
+   "vision": true,
+   "revision": "c202236235762e1c871ad0ccb60c8ee5ba337b9a",
+   "files": [
+    {
+     "path": "LICENSE",
+     "size": 11544,
+     "sha256": null,
+     "blob": "f938136e3adacfd92be087f6e113b5d6d97f678f"
+    },
+    {
+     "path": "README.md",
+     "size": 77643,
+     "sha256": null,
+     "blob": "0f3972cb2c995a86bde9ac92440da530fe2b2c68"
+    },
+    {
+     "path": "chat_template.jinja",
+     "size": 7756,
+     "sha256": null,
+     "blob": "a585dec894e63da457d9440ec6aa7caa16d20860"
+    },
+    {
+     "path": "config.json",
+     "size": 3126,
+     "sha256": null,
+     "blob": "273ce437e01baf96a07cd9eb3d5f48bac8d7c657"
+    },
+    {
+     "path": "merges.txt",
+     "size": 3353259,
+     "sha256": null,
+     "blob": "a494e019ca1502219fd0128658b979e5f05ae8e8"
+    },
+    {
+     "path": "model.safetensors-00001-of-00004.safetensors",
+     "size": 5276436216,
+     "sha256": "db6f444b43d318c92f360a13a25561a6a65b10c0631b8ed305a426dbaa6c380e",
+     "blob": "dfcd6f97b641f0447db5697eca1f4e227c84449c"
+    },
+    {
+     "path": "model.safetensors-00002-of-00004.safetensors",
+     "size": 5335161512,
+     "sha256": "31c7d7e2dd5d207840b31cc59083c8f4c4718959149e0358c0364052bb9a0330",
+     "blob": "645b45d883adaee57a4dbbf75577fa634d20c6b5"
+    },
+    {
+     "path": "model.safetensors-00003-of-00004.safetensors",
+     "size": 5368717440,
+     "sha256": "7ec36ba3a4176a44c3c0876ad80c56a2f70c84bf008d82e9501df642f17dadec",
+     "blob": "20f21fdc49bdca8f021badede1ec436d8241f1e2"
+    },
+    {
+     "path": "model.safetensors-00004-of-00004.safetensors",
+     "size": 3325995712,
+     "sha256": "b62b0c4cd7e44edee103ee8f4fe225f246d5e768e07bfd5f25b63a8aa1fdd0c6",
+     "blob": "5a0f71d358bf91155d46e610dc32db45989a1a5f"
+    },
+    {
+     "path": "model.safetensors.index.json",
+     "size": 79657,
+     "sha256": null,
+     "blob": "e4c1cb7dba5096b43b9d92bc781aba5e3aa8acd8"
+    },
+    {
+     "path": "preprocessor_config.json",
+     "size": 390,
+     "sha256": null,
+     "blob": "2ea84a437d448ff71b08df68fdd949d5cc4ebb64"
+    },
+    {
+     "path": "tokenizer.json",
+     "size": 12807982,
+     "sha256": "5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42",
+     "blob": "a73a846725794819aa6e1c9e97d8dc9671c2006d"
+    },
+    {
+     "path": "tokenizer_config.json",
+     "size": 16710,
+     "sha256": null,
+     "blob": "eda48d3e75a8e59a8479ee4ec8b37f76e711d9c1"
+    },
+    {
+     "path": "video_preprocessor_config.json",
+     "size": 385,
+     "sha256": null,
+     "blob": "3ba673a5ad7d4d13f54155ecd38b2a94a6dac8fe"
+    },
+    {
+     "path": "vocab.json",
+     "size": 6722759,
+     "sha256": null,
+     "blob": "0aa0ce0658d60ac4a5d609f4eadb0e8e43514176"
+    }
+   ],
+   "default": false,
+   "medical": false
+  },
+  {
+   "id": "medpsy-4b",
+   "name": "MedPsy-4B",
+   "purpose": "Medical-tuned, text only. Thinks before it answers, so it is slower.",
+   "repo": "qvac/MedPsy-4B",
+   "runtime": "mlx_lm",
+   "bits": [
+    4,
+    8
+   ],
+   "ramGB": {
+    "4": 3.5,
+    "8": 5.5
+   },
+   "diskGB": {
+    "4": 2.3,
+    "8": 4.3
+   },
+   "license": "Apache-2.0. Note: trained partly on data with non-commercial terms; fine for personal use.",
+   "default": false,
+   "revision": "77aec3ab8c6eae92e18951e0a86c68c84a067d28",
+   "files": [
+    {
+     "path": "ATTRIBUTIONS.md",
+     "size": 108534,
+     "sha256": null,
+     "blob": "f1e157edcb252a2fa7fab4ca9d7b5d142afb87ff"
+    },
+    {
+     "path": "LICENSE",
+     "size": 10175,
+     "sha256": null,
+     "blob": "e454a52586f29b8ce8a6799163eac1f875e9ac01"
+    },
+    {
+     "path": "README.md",
+     "size": 22078,
+     "sha256": null,
+     "blob": "46d0d061953550126b9624c31ee77285b7e3cb94"
+    },
+    {
+     "path": "config.json",
+     "size": 1537,
+     "sha256": null,
+     "blob": "0ce5d50009fdface862e0a44803c63c6b143a87c"
+    },
+    {
+     "path": "generation_config.json",
+     "size": 243,
+     "sha256": null,
+     "blob": "1f91ddb36a507aec0bfb05322b6ee808aa41ced4"
+    },
+    {
+     "path": "model.safetensors",
+     "size": 8822894520,
+     "sha256": "4d46d55174f7c049eb40575c8b4b2b43bba9893cf3dc66fad2f899a64b2d115a",
+     "blob": "0ce27265ff2f374b193d2ad6ea5516735c8d5bf7"
+    },
+    {
+     "path": "special_tokens_map.json",
+     "size": 613,
+     "sha256": null,
+     "blob": "ac23c0aaa2434523c494330aeb79c58395378103"
+    },
+    {
+     "path": "tokenizer.json",
+     "size": 11422654,
+     "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+     "blob": "cd71f61a15a522601badb3dc960d800d9cb3766c"
+    },
+    {
+     "path": "tokenizer_config.json",
+     "size": 11094,
+     "sha256": null,
+     "blob": "bccb006ab400fe915b3bd15a175b6741d8938f16"
+    },
+    {
+     "path": "vocab.json",
+     "size": 2776833,
+     "sha256": null,
+     "blob": "4783fe10ac3adce15ac8f358ef5462739852c569"
+    }
+   ],
+   "vision": false,
+   "medical": true
+  },
+  {
+   "id": "medpsy-4b-gguf",
+   "name": "MedPsy-4B (GGUF fallback)",
+   "purpose": "Text-only fallback for Macs without Apple silicon (Intel).",
+   "repo": "qvac/MedPsy-4B-GGUF",
+   "runtime": "llama_cpp",
+   "bits": [
+    4
+   ],
+   "ramGB": {
+    "4": 3.8
+   },
+   "diskGB": {
+    "4": 2.7
+   },
+   "license": "Apache-2.0. Note: trained partly on data with non-commercial terms; fine for personal use.",
+   "revision": "ad85e5a6f745027a576595df9acf745b071353b3",
+   "files": [
+    {
+     "path": "LICENSE",
+     "size": 10175,
+     "sha256": null,
+     "blob": "e454a52586f29b8ce8a6799163eac1f875e9ac01"
+    },
+    {
+     "path": "medpsy-4b-q4_k_m-imat.gguf",
+     "size": 2716068640,
+     "sha256": "2ecbf622a2856f631001f20f593669aa03acba39977f521bef80cd8600864980",
+     "blob": "568a55aeb9b3c929f6d8f6a57c1279c5452e0893"
+    }
+   ],
+   "vision": false,
+   "default": false,
+   "medical": true
+  }
+ ]
+}
