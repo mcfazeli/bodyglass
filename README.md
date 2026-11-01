@@ -151,6 +151,8 @@ The pipeline, server and tests also run on Linux (CPU only):
 
 The browser tests in `tests/test_ui_cutaway.py` need Playwright, Chrome and a processed public sample case;
 otherwise they are skipped. `tools/make_dist.sh` builds the release zip.
+GitHub Actions runs the suite on every pull request and push to `main` (`.github/workflows/tests.yml`), on Linux
+without the browser tests and the local-model chat test, which need large downloads.
 
 **Test data is public only.** Never add real patient scans, processed outputs, model weights or secrets to the
 repository; `.gitignore` blocks the common file types. The scans used for development and the screenshots are:

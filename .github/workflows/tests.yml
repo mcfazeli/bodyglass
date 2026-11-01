@@ -1,0 +1,55 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            .github/workflows/tests.yml
+
+      # Same packages as install.sh on Linux (CPU-only PyTorch), plus the test-only tools
+      - name: Install packages
+        run: |
+          pip install "torch==2.14.*" --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt pytest cryptography
+
+      # Public Spine Generic sample (OpenNeuro ds001919, sub-amu01) for the thin-slab registration test
+      - name: Download public neck sample
+        run: |
+          mkdir -p sample_data/neck_ds001919 && cd sample_data/neck_ds001919
+          for f in T1w T2w; do
+            curl -L --fail --retry 3 -sS -o sub-amu01_$f.nii.gz https://s3.amazonaws.com/openneuro.org/ds001919/sub-amu01/anat/sub-amu01_$f.nii.gz
+          done
+          sha256sum -c <<'SUMS'
+          4f784facd6d3a98c55753a74abb8bcaa8fff71a2f1b61cc6abb992930926af3d  sub-amu01_T1w.nii.gz
+          f235f1d8441570323664636cbdc28b9e4f28669db8c31342bdb7ea1c81393fb0  sub-amu01_T2w.nii.gz
+          SUMS
+
+      # Not run here (they skip themselves anywhere their inputs are missing):
+      # - test_ui_cutaway.py: needs Playwright, Chrome and a sample case processed with the full model pipeline.
+      # - test_local_llama_answers_...: needs a ~0.7 GB GGUF model and llama-cpp-python built from source.
+      # Every other test must run, so any skip (a missing package or sample) fails the job.
+      - name: Run tests
+        run: |
+          set -o pipefail
+          python -m pytest tests -rs \
+            --ignore=tests/test_ui_cutaway.py \
+            --deselect tests/test_ai_chat.py::test_local_llama_answers_without_any_outbound_connection \
+            | tee pytest.log
+          if grep -qE '[0-9]+ skipped' pytest.log; then echo "::error::Tests were skipped (see the list above)"; exit 1; fi
