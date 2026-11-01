@@ -25,7 +25,12 @@ def _slices(files):
                 continue
             raise RuntimeError("This multi-frame DICOM file has no slice positions, so BodyGlass can't build "
                                "a 3D model from it. Try a classic (one file per slice) export of the scan.")
-        px = d.pixel_array
+        try:
+            px = d.pixel_array
+        except Exception as e:   # a compressed claim that doesn't decode: plain message, not a pydicom error
+            if f is None:
+                raise
+            raise RuntimeError(BAD_FRAMES) from e
         px = px[f] if f is not None and px.ndim == 3 else px
         out.append((np.array(at("ImagePositionPatient"), float), np.array(at("ImageOrientationPatient"), float),
                     [float(x) for x in at("PixelSpacing")], float(at("SliceThickness") or 1.0),

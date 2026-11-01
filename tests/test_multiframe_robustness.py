@@ -107,8 +107,6 @@ def test_classic_file_named_like_a_frame_reference_still_loads(tmp_path):
     assert load_series(s.files)[0].shape == (N, 6, 5)
 
 
-@pytest.mark.xfail(strict=True, reason="regression in c5ed5da: classic one-file-per-slice files that carry "
-                                       "NumberOfFrames=1 are excluded as multi-frame; main reads them fine")
 def test_classic_files_with_number_of_frames_one_are_still_used(tmp_path):
     from test_multiframe import write_classic
     write_classic(tmp_path)
@@ -116,3 +114,22 @@ def test_classic_files_with_number_of_frames_one_are_still_used(tmp_path):
         _edit(f, lambda d: setattr(d, "NumberOfFrames", 1))
     (s,) = scan_folder(str(tmp_path))
     assert s.excluded is None and pick_t1([s]) is s
+
+
+def test_truncated_pixel_data_is_caught_at_scan(tmp_path):
+    p = tmp_path / "IM0001"
+    write_enhanced(p)
+    p.write_bytes(p.read_bytes()[:-100])   # header intact, last frames cut off
+    (s,) = scan_folder(str(tmp_path))
+    assert s.excluded == "damaged or oversized multi-frame file"
+    with pytest.raises(RuntimeError, match="looks damaged"):
+        load_series([f"{p}#frame=0"])
+
+
+def test_compressed_frames_that_do_not_decode_get_the_plain_message(tmp_path):
+    p = tmp_path / "IM0001"
+    write_enhanced(p)
+    _edit(p, lambda d: (d.compress(RLELossless, d.pixel_array), setattr(d, "Rows", 600)))   # still under the cap
+    (s,) = scan_folder(str(tmp_path))
+    with pytest.raises(RuntimeError, match="looks damaged"):
+        load_series(s.files)

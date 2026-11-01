@@ -52,7 +52,7 @@ class Series:
 FRAME = "#frame="   # a frame of an enhanced multi-frame file is listed as "<path>#frame=<index>"
 
 
-MAX_DECODE_BYTES = 2 << 30   # refuse to decode more than 2 GiB of pixels; a 3D T1 is about 30 MB
+MAX_DECODE_BYTES = 512 << 20   # loading peaks at ~5x this (float copies); 0.5 mm whole-head 3D or 6 echoes x 256^3 fit
 BAD_FRAMES = ("This multi-frame DICOM file looks damaged or is too large to open safely: its frame count or "
               "image size doesn't match its pixel data.")
 
@@ -91,7 +91,8 @@ def frames_bad(ds, path) -> bool:
             with open(path, "rb") as fh:
                 fh.seek(el.value_tell)
                 return parse_fragments(fh)[0] - 1 < n
-        return (len(el.value) if el.value is not None else el.length) < n * frame_bytes
+        have = len(el.value) if el.value is not None else min(el.length, os.path.getsize(path) - el.value_tell)
+        return have < n * frame_bytes   # the declared length of a truncated file is more than the file holds
     except Exception:
         return True
 
@@ -174,8 +175,10 @@ def scan_folder(root: str) -> list[Series]:
             path = os.path.join(dirpath, fn)
             try:
                 ds = pydicom.dcmread(path, stop_before_pixels=True,
-                                     specific_tags=HEADER_TAGS + ["NumberOfFrames"])
-                if "NumberOfFrames" in ds and hasattr(ds, "Rows"):
+                                     specific_tags=HEADER_TAGS + ["NumberOfFrames", "PerFrameFunctionalGroupsSequence"])
+                # classic slices may carry NumberOfFrames=1; only real multi-frame files take the enhanced path
+                if (int(ds.get("NumberOfFrames") or 1) > 1 or "PerFrameFunctionalGroupsSequence" in ds) \
+                        and hasattr(ds, "Rows"):
                     ds = pydicom.dcmread(path, defer_size=1024)   # pixel data stays on disk; its size is checked
                     for uid, refs, meta in enhanced_stacks(ds, path):
                         s = series.setdefault(uid, Series(uid=uid, meta=meta))
