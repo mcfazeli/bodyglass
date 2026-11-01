@@ -118,4 +118,4 @@ def test_multiframe_without_positions_is_rejected_with_a_plain_message(tmp_path)
     with pytest.raises(RuntimeError, match="no slice positions"):
         load_series(s.files)
     reply, code = server.add_scan(str(tmp_path), str(tmp_path / "cases"))
-    assert code == 400 and "multi-frame DICOM file without slice positions" in reply["error"]
+    assert code == 400 and "multi-frame DICOM file BodyGlass can't read" in reply["error"]

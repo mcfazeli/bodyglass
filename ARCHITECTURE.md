@@ -154,7 +154,8 @@ See [INSTALL-MAC.md](INSTALL-MAC.md).
   compressed data.
 * Enhanced multi-frame MR (one file holding a whole series) is split into its stacks (echoes, magnitude/phase,
   orientations, time points) and each frame is placed from its Per-Frame / Shared Functional Groups. A multi-frame
-  file without slice positions is listed but not used, with a message saying why. Tested with synthetic files
+  file without slice positions, or whose frame count or size doesn't match its pixel data (or would need over
+  2 GiB to decode), is listed but not used, with a message saying why. Tested with synthetic files
   only; real scanner exports may hold variations not covered yet.
 * Software-WebGL screenshots are slow (about 50 s per frame). On a real GPU the viewer is interactive.
 

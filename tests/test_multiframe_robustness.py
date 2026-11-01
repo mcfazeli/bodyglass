@@ -1,12 +1,10 @@
-"""QA: malformed enhanced multi-frame files. All DICOM here is synthetic, built in the test.
-Tests marked xfail(strict) document known gaps found in review of #15; they flip to failures once fixed,
-so remove the marker then."""
+"""Malformed enhanced multi-frame files. All DICOM here is synthetic, built in the test."""
 import numpy as np
 import pydicom
 import pytest
 from pydicom.uid import RLELossless
 
-from bodyglass.dicom_scan import pick_t1, scan_folder
+from bodyglass.dicom_scan import BAD_FRAMES, pick_t1, scan_folder
 from bodyglass.volume import load_series
 from test_multiframe import COL_DIR, N, P0, PS, ROW_DIR, TRUTH, write_enhanced
 
@@ -43,8 +41,6 @@ def test_rle_compressed_multiframe_loads(tmp_path):
     assert np.array_equal(vol, TRUTH * 2.0 - 10) and np.allclose(aff[:3, 3], P0)
 
 
-@pytest.mark.xfail(strict=True, reason="NumberOfFrames is trusted: a header-only file can claim millions of frames "
-                                       "and scan_folder loops over all of them")
 def test_frame_count_beyond_per_frame_groups_is_not_trusted(tmp_path):
     p = tmp_path / "IM0001"
     write_enhanced(p)
@@ -53,8 +49,6 @@ def test_frame_count_beyond_per_frame_groups_is_not_trusted(tmp_path):
     assert all(len(s.files) <= N for s in found)
 
 
-@pytest.mark.xfail(strict=True, reason="top-level ImagePositionPatient overrides per-frame positions, so all frames "
-                                       "collapse to one slice after the scan reported 64 images")
 def test_stale_top_level_position_does_not_collapse_the_volume(tmp_path):
     p = tmp_path / "IM0001"
     write_enhanced(p)
@@ -64,8 +58,6 @@ def test_stale_top_level_position_does_not_collapse_the_volume(tmp_path):
     assert vol.shape[0] == N
 
 
-@pytest.mark.xfail(strict=True, reason="a multi-frame file with only top-level geometry is picked as the T1 but "
-                                       "loads as a single slice")
 def test_multiframe_with_one_shared_position_is_not_picked(tmp_path):
     p = tmp_path / "IM0001"
     write_enhanced(p)
@@ -78,10 +70,38 @@ def test_multiframe_with_one_shared_position_is_not_picked(tmp_path):
     assert pick_t1(scan_folder(str(tmp_path))) is None
 
 
-@pytest.mark.xfail(strict=True, reason="NumberOfFrames larger than the pixel data is only caught at load time")
 def test_frame_count_larger_than_pixel_data_is_caught_at_scan(tmp_path):
     p = tmp_path / "IM0001"
     write_enhanced(p)
     _edit(p, lambda d: setattr(d, "NumberOfFrames", 200))
     found = scan_folder(str(tmp_path))
     assert all(s.excluded for s in found)
+
+
+def test_huge_claimed_image_size_is_refused_before_decoding(tmp_path):
+    p = tmp_path / "IM0001"
+    write_enhanced(p)
+    _edit(p, lambda d: (d.compress(RLELossless, d.pixel_array), setattr(d, "Rows", 60_000), setattr(d, "Columns", 60_000)))
+    (s,) = scan_folder(str(tmp_path))
+    assert s.excluded == "damaged or oversized multi-frame file"
+    with pytest.raises(RuntimeError, match="too large to open safely"):
+        load_series([f"{p}#frame=0"])
+    assert "too large to open safely" in BAD_FRAMES
+
+
+def test_frames_sharing_one_position_are_not_picked(tmp_path):
+    p = tmp_path / "IM0001"
+    write_enhanced(p)
+    _edit(p, lambda d: [g.PlanePositionSequence[0].__setattr__("ImagePositionPatient", list(P0))
+                        for g in d.PerFrameFunctionalGroupsSequence])
+    (s,) = scan_folder(str(tmp_path))
+    assert s.excluded == "multi-frame file without slice positions"
+
+
+def test_classic_file_named_like_a_frame_reference_still_loads(tmp_path):
+    from test_multiframe import write_classic
+    write_classic(tmp_path)
+    for f in tmp_path.iterdir():
+        f.rename(tmp_path / (f.name + "#frame=3"))
+    (s,) = scan_folder(str(tmp_path))
+    assert load_series(s.files)[0].shape == (N, 6, 5)

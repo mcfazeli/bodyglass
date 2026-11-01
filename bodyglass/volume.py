@@ -5,7 +5,7 @@ import numpy as np
 import pydicom
 from scipy import ndimage
 
-from .dicom_scan import frame_attr, split_ref
+from .dicom_scan import BAD_FRAMES, frame_attr, frames_bad, split_ref
 
 
 def _slices(files):
@@ -14,7 +14,11 @@ def _slices(files):
     out, cache = [], {}
     for ref in files:
         path, f = split_ref(ref)
-        d = cache[path] if path in cache else cache.setdefault(path, pydicom.dcmread(path))
+        if path not in cache:
+            cache[path] = pydicom.dcmread(path)
+            if f is not None and frames_bad(cache[path], path):
+                raise RuntimeError(BAD_FRAMES)
+        d = cache[path]
         at = lambda kw: frame_attr(d, f, kw)
         if at("ImagePositionPatient") is None or at("ImageOrientationPatient") is None or at("PixelSpacing") is None:
             if f is None:

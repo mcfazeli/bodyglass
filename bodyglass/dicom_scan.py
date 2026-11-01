@@ -4,11 +4,13 @@ Folder and file names are never used for the decision.
 """
 from __future__ import annotations
 
+import io
 import os
 import re
 from dataclasses import dataclass, field
 
 import pydicom
+from pydicom.encaps import parse_fragments
 
 HEADER_TAGS = [
     "SeriesInstanceUID", "SeriesDescription", "ProtocolName", "SequenceName",
@@ -50,22 +52,48 @@ class Series:
 FRAME = "#frame="   # a frame of an enhanced multi-frame file is listed as "<path>#frame=<index>"
 
 
+MAX_DECODE_BYTES = 2 << 30   # refuse to decode more than 2 GiB of pixels; a 3D T1 is about 30 MB
+BAD_FRAMES = ("This multi-frame DICOM file looks damaged or is too large to open safely: its frame count or "
+              "image size doesn't match its pixel data.")
+
+
 def split_ref(ref: str) -> tuple[str, int | None]:
     path, sep, i = ref.rpartition(FRAME)
-    return (path, int(i)) if sep and i.isdigit() else (ref, None)
+    return (path, int(i)) if sep and i.isdigit() and not os.path.exists(ref) else (ref, None)
 
 
 def frame_attr(ds, frame, keyword):
-    """An attribute of one frame: top level, else the frame's Per-Frame then the Shared Functional Group
-    (DICOM PS3.3 C.7.6.16; each group item holds one-item sequences such as PlanePositionSequence)."""
-    if frame is None or keyword in ds:
-        return getattr(ds, keyword, None)
-    pf = ds.get("PerFrameFunctionalGroupsSequence") or []
-    for item in ([pf[frame]] if frame < len(pf) else []) + list(ds.get("SharedFunctionalGroupsSequence") or [])[:1]:
-        for el in item:
-            if el.VR == "SQ" and len(el.value) and keyword in el.value[0]:
-                return el.value[0][keyword].value
-    return None
+    """An attribute of one frame: the frame's Per-Frame then the Shared Functional Group (DICOM PS3.3 C.7.6.16;
+    each group item holds one-item sequences such as PlanePositionSequence), then the top level."""
+    if frame is not None:
+        pf = ds.get("PerFrameFunctionalGroupsSequence") or []
+        for item in ([pf[frame]] if frame < len(pf) else []) + list(ds.get("SharedFunctionalGroupsSequence") or [])[:1]:
+            for el in item:
+                if el.VR == "SQ" and len(el.value) and keyword in el.value[0]:
+                    return el.value[0][keyword].value
+    return getattr(ds, keyword, None)
+
+
+def frames_bad(ds, path) -> bool:
+    """True if a multi-frame file's frame count or size can't be trusted: it disagrees with the per-frame groups
+    or the pixel data (bytes, or fragments when compressed), or decoding it would need over MAX_DECODE_BYTES."""
+    try:
+        n, bits = int(ds.NumberOfFrames), int(ds.BitsAllocated)
+        frame_bytes = int(ds.Rows) * int(ds.Columns) * int(ds.get("SamplesPerPixel") or 1) * bits // 8
+        pf = ds.get("PerFrameFunctionalGroupsSequence")
+        el = ds.get_item("PixelData", keep_deferred=True)
+        if n < 1 or bits not in (8, 16, 32) or not frame_bytes or n * frame_bytes > MAX_DECODE_BYTES \
+                or (pf is not None and len(pf) != n) or el is None:
+            return True
+        if ds.file_meta.TransferSyntaxUID.is_compressed:
+            if el.value is not None:
+                return parse_fragments(io.BytesIO(el.value))[0] - 1 < n   # minus the basic offset table item
+            with open(path, "rb") as fh:
+                fh.seek(el.value_tell)
+                return parse_fragments(fh)[0] - 1 < n
+        return (len(el.value) if el.value is not None else el.length) < n * frame_bytes
+    except Exception:
+        return True
 
 
 def _val(ds, tag):
@@ -108,20 +136,27 @@ def enhanced_stacks(ds, path) -> list[tuple[str, list, dict]]:
             if int(d.DimensionIndexPointer) not in spatial]
     hv = lambda v: tuple(round(float(x), 3) if not isinstance(x, str) else x for x in v) \
         if isinstance(v, (list, pydicom.multival.MultiValue)) else v
+    uid, pf = str(ds.SeriesInstanceUID), ds.get("PerFrameFunctionalGroupsSequence")
+    bad = frames_bad(ds, path)
+    if bad or not pf:   # listed (one entry) but never used; no loop over a claimed frame count
+        meta = _enhanced_meta(ds, None)
+        meta["badFrames" if bad else "noGeometry"] = True
+        return [(uid, [f"{path}{FRAME}0"], meta)]
     stacks: dict[str, list] = {}
-    for f in range(int(ds.NumberOfFrames or 1)):
+    for f in range(len(pf)):
         dv = frame_attr(ds, f, "DimensionIndexValues")
         dv = list(dv) if isinstance(dv, (list, pydicom.multival.MultiValue)) else [dv]
         key = (tuple(dv[k] for k in dims if k < len(dv)),
                *(hv(frame_attr(ds, f, kw)) for kw in ("StackID", "ImageOrientationPatient", "PixelSpacing",
                                                        "EffectiveEchoTime", "FrameType", "ComplexImageComponent")))
         stacks.setdefault(repr(key), []).append(f)
-    out, uid = [], str(ds.SeriesInstanceUID)
+    out = []
     for n, k in enumerate(sorted(stacks)):
         frames = stacks[k]
         meta = _enhanced_meta(ds, frames[0])
-        meta["noGeometry"] = any(frame_attr(ds, f, t) is None for f in frames
-                                 for t in ("ImagePositionPatient", "ImageOrientationPatient", "PixelSpacing"))
+        pos = [frame_attr(ds, f, "ImagePositionPatient") for f in frames]
+        meta["noGeometry"] = None in pos or (len(frames) > 1 and len({tuple(map(float, p)) for p in pos}) == 1) \
+            or any(frame_attr(ds, f, t) is None for f in frames for t in ("ImageOrientationPatient", "PixelSpacing"))
         if len(stacks) > 1:
             meta["SeriesDescription"] = f"{meta.get('SeriesDescription') or 'Series'} (part {n + 1} of {len(stacks)})"
         out.append((uid if len(stacks) == 1 else f"{uid}.{n + 1}", [f"{path}{FRAME}{f}" for f in frames], meta))
@@ -141,7 +176,7 @@ def scan_folder(root: str) -> list[Series]:
                 ds = pydicom.dcmread(path, stop_before_pixels=True,
                                      specific_tags=HEADER_TAGS + ["NumberOfFrames"])
                 if "NumberOfFrames" in ds and hasattr(ds, "Rows"):
-                    ds = pydicom.dcmread(path, stop_before_pixels=True)
+                    ds = pydicom.dcmread(path, defer_size=1024)   # pixel data stays on disk; its size is checked
                     for uid, refs, meta in enhanced_stacks(ds, path):
                         s = series.setdefault(uid, Series(uid=uid, meta=meta))
                         s.files += refs
@@ -185,6 +220,8 @@ def score_series(s: Series) -> None:
 
     if m.get("noGeometry"):
         s.excluded = "multi-frame file without slice positions"
+    if m.get("badFrames"):
+        s.excluded = "damaged or oversized multi-frame file"
     if (m.get("Modality") or "MR") != "MR":
         s.excluded = "not MR"
     tokens = set(re.split(r"[^A-Z0-9*]+", text))
