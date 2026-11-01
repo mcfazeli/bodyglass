@@ -62,6 +62,10 @@ def score_neck(s):
 
     if (m.get("Modality") or "MR") != "MR":
         excluded = "not MR"
+    elif m.get("noGeometry"):
+        excluded = "multi-frame file without slice positions"
+    elif m.get("badFrames"):
+        excluded = "damaged or oversized multi-frame file"
     elif tokens & {"LOCALIZER", "SCOUT", "LOC", "SURVEY", "AAHEAD"}:
         excluded = "localizer"
     elif "EP" in scan_seq or tokens & {"DWI", "ADC", "TRACEW", "DTI"} or "ADC" in itype or "DIFFUSION" in itype:

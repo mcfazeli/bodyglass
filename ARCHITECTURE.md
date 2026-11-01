@@ -151,8 +151,12 @@ See [INSTALL-MAC.md](INSTALL-MAC.md).
   cropped or downsampled for speed.
 * The non-defaced sample shows a face. Users' own scans will too, which is expected and stays local.
 * Compressed DICOM (JPEG/JPEG2000) is supported via pylibjpeg but was not tested with real
-  compressed data. Enhanced multi-frame DICOM is not handled yet (most patient exports are classic
-  single-frame).
+  compressed data.
+* Enhanced multi-frame MR (one file holding a whole series) is split into its stacks (echoes, magnitude/phase,
+  orientations, time points) and each frame is placed from its Per-Frame / Shared Functional Groups. A multi-frame
+  file without slice positions, or whose frame count or size doesn't match its pixel data (or would need over
+  512 MiB to decode), is listed but not used, with a message saying why. Tested with synthetic files
+  only; real scanner exports may hold variations not covered yet.
 * Software-WebGL screenshots are slow (about 50 s per frame). On a real GPU the viewer is interactive.
 
 ## 9. Benchmarks: brain extraction (8-vCPU Linux, CPU only)

@@ -4,11 +4,13 @@ Folder and file names are never used for the decision.
 """
 from __future__ import annotations
 
+import io
 import os
 import re
 from dataclasses import dataclass, field
 
 import pydicom
+from pydicom.encaps import parse_fragments
 
 HEADER_TAGS = [
     "SeriesInstanceUID", "SeriesDescription", "ProtocolName", "SequenceName",
@@ -47,22 +49,124 @@ class Series:
         }
 
 
+FRAME = "#frame="   # a frame of an enhanced multi-frame file is listed as "<path>#frame=<index>"
+
+
+MAX_DECODE_BYTES = 512 << 20   # loading peaks at ~5x this (float copies); 0.5 mm whole-head 3D or 6 echoes x 256^3 fit
+BAD_FRAMES = ("This multi-frame DICOM file looks damaged or is too large to open safely: its frame count or "
+              "image size doesn't match its pixel data.")
+
+
+def split_ref(ref: str) -> tuple[str, int | None]:
+    path, sep, i = ref.rpartition(FRAME)
+    return (path, int(i)) if sep and i.isdigit() and not os.path.exists(ref) else (ref, None)
+
+
+def frame_attr(ds, frame, keyword):
+    """An attribute of one frame: the frame's Per-Frame then the Shared Functional Group (DICOM PS3.3 C.7.6.16;
+    each group item holds one-item sequences such as PlanePositionSequence), then the top level."""
+    if frame is not None:
+        pf = ds.get("PerFrameFunctionalGroupsSequence") or []
+        for item in ([pf[frame]] if frame < len(pf) else []) + list(ds.get("SharedFunctionalGroupsSequence") or [])[:1]:
+            for el in item:
+                if el.VR == "SQ" and len(el.value) and keyword in el.value[0]:
+                    return el.value[0][keyword].value
+    return getattr(ds, keyword, None)
+
+
+def frames_bad(ds, path) -> bool:
+    """True if a multi-frame file's frame count or size can't be trusted: it disagrees with the per-frame groups
+    or the pixel data (bytes, or fragments when compressed), or decoding it would need over MAX_DECODE_BYTES."""
+    try:
+        n, bits = int(ds.NumberOfFrames), int(ds.BitsAllocated)
+        frame_bytes = int(ds.Rows) * int(ds.Columns) * int(ds.get("SamplesPerPixel") or 1) * bits // 8
+        pf = ds.get("PerFrameFunctionalGroupsSequence")
+        el = ds.get_item("PixelData", keep_deferred=True)
+        if n < 1 or bits not in (8, 16, 32) or not frame_bytes or n * frame_bytes > MAX_DECODE_BYTES \
+                or (pf is not None and len(pf) != n) or el is None:
+            return True
+        if ds.file_meta.TransferSyntaxUID.is_compressed:
+            if el.value is not None:
+                return parse_fragments(io.BytesIO(el.value))[0] - 1 < n   # minus the basic offset table item
+            with open(path, "rb") as fh:
+                fh.seek(el.value_tell)
+                return parse_fragments(fh)[0] - 1 < n
+        have = len(el.value) if el.value is not None else min(el.length, os.path.getsize(path) - el.value_tell)
+        return have < n * frame_bytes   # the declared length of a truncated file is more than the file holds
+    except Exception:
+        return True
+
+
 def _val(ds, tag):
-    v = getattr(ds, tag, None)
+    return _conv(getattr(ds, tag, None))
+
+
+def _conv(v):
     if v is None:
         return None
-    if isinstance(v, pydicom.multival.MultiValue):
+    if isinstance(v, (list, pydicom.multival.MultiValue)):
         return [x if isinstance(x, str) else float(x) for x in v]
     if isinstance(v, (pydicom.valuerep.DSfloat, pydicom.valuerep.IS)):
         return float(v)
     return v if isinstance(v, (int, float)) else str(v)
 
 
-def scan_folder(root: str) -> list[Series]:
-    """Read headers only (no pixel data) of every DICOM file under root.
+def _enhanced_meta(ds, f):
+    """Classic header fields for frame f of an enhanced file, so scoring treats it like a single-frame series."""
+    m = {t: _conv(frame_attr(ds, f, t)) for t in HEADER_TAGS}
+    m["SequenceName"] = m["SequenceName"] or _conv(frame_attr(ds, f, "PulseSequenceName"))
+    m["EchoTime"] = m["EchoTime"] or _conv(frame_attr(ds, f, "EffectiveEchoTime"))
+    ti = _conv(frame_attr(ds, f, "InversionTimes"))
+    m["InversionTime"] = m["InversionTime"] or (ti[0] if isinstance(ti, list) and ti else ti)
+    ft = _conv(frame_attr(ds, f, "FrameType"))
+    if ft:
+        m["ImageType"] = list(ft) + (["PHASE"] if frame_attr(ds, f, "ComplexImageComponent") == "PHASE" else [])
+    echo = frame_attr(ds, f, "EchoPulseSequence")
+    if echo and not m["ScanningSequence"]:
+        m["ScanningSequence"] = {"GRADIENT": ["GR"], "SPIN": ["SE"], "BOTH": ["SE", "GR"]}.get(str(echo), []) \
+            + (["IR"] if frame_attr(ds, f, "InversionRecovery") == "YES" else [])
+    return m
 
-    shortcut: one file = one slice; Enhanced multi-frame MR (one file per series, e.g. Siemens XA, newer
-    Philips) is not read and its T1 is reported as 'not found'. Add frame splitting if a user's export needs it."""
+
+def enhanced_stacks(ds, path) -> list[tuple[str, list, dict]]:
+    """Split one enhanced multi-frame file into (uid, frame refs, meta) per stack: frames that differ only by
+    slice position. Echoes, stacks, time points, magnitude/phase or orientations become separate series.
+    shortcut: a series split over several enhanced files is merged by stack order; fine for one file per series."""
+    spatial = {0x00209057, 0x00200032}   # InStackPositionNumber, ImagePositionPatient
+    dims = [k for k, d in enumerate(ds.get("DimensionIndexSequence") or [])
+            if int(d.DimensionIndexPointer) not in spatial]
+    hv = lambda v: tuple(round(float(x), 3) if not isinstance(x, str) else x for x in v) \
+        if isinstance(v, (list, pydicom.multival.MultiValue)) else v
+    uid, pf = str(ds.SeriesInstanceUID), ds.get("PerFrameFunctionalGroupsSequence")
+    bad = frames_bad(ds, path)
+    if bad or not pf:   # listed (one entry) but never used; no loop over a claimed frame count
+        meta = _enhanced_meta(ds, None)
+        meta["badFrames" if bad else "noGeometry"] = True
+        return [(uid, [f"{path}{FRAME}0"], meta)]
+    stacks: dict[str, list] = {}
+    for f in range(len(pf)):
+        dv = frame_attr(ds, f, "DimensionIndexValues")
+        dv = list(dv) if isinstance(dv, (list, pydicom.multival.MultiValue)) else [dv]
+        key = (tuple(dv[k] for k in dims if k < len(dv)),
+               *(hv(frame_attr(ds, f, kw)) for kw in ("StackID", "ImageOrientationPatient", "PixelSpacing",
+                                                       "EffectiveEchoTime", "FrameType", "ComplexImageComponent")))
+        stacks.setdefault(repr(key), []).append(f)
+    out = []
+    for n, k in enumerate(sorted(stacks)):
+        frames = stacks[k]
+        meta = _enhanced_meta(ds, frames[0])
+        pos = [frame_attr(ds, f, "ImagePositionPatient") for f in frames]
+        meta["noGeometry"] = None in pos or (len(frames) > 1 and len({tuple(map(float, p)) for p in pos}) == 1) \
+            or any(frame_attr(ds, f, t) is None for f in frames for t in ("ImageOrientationPatient", "PixelSpacing"))
+        if len(stacks) > 1:
+            meta["SeriesDescription"] = f"{meta.get('SeriesDescription') or 'Series'} (part {n + 1} of {len(stacks)})"
+        out.append((uid if len(stacks) == 1 else f"{uid}.{n + 1}", [f"{path}{FRAME}{f}" for f in frames], meta))
+    return out
+
+
+def scan_folder(root: str) -> list[Series]:
+    """Read headers only (no pixel data) of every DICOM file under root. Classic files are one slice each;
+    an enhanced multi-frame file (e.g. Siemens XA, newer Philips) is split into its stacks, one series each."""
     series: dict[str, Series] = {}
     for dirpath, _dirs, files in os.walk(root):
         for fn in files:
@@ -71,9 +175,17 @@ def scan_folder(root: str) -> list[Series]:
             path = os.path.join(dirpath, fn)
             try:
                 ds = pydicom.dcmread(path, stop_before_pixels=True,
-                                     specific_tags=HEADER_TAGS)
+                                     specific_tags=HEADER_TAGS + ["NumberOfFrames", "PerFrameFunctionalGroupsSequence"])
+                # classic slices may carry NumberOfFrames=1; only real multi-frame files take the enhanced path
+                if (int(ds.get("NumberOfFrames") or 1) > 1 or "PerFrameFunctionalGroupsSequence" in ds) \
+                        and hasattr(ds, "Rows"):
+                    ds = pydicom.dcmread(path, defer_size=1024)   # pixel data stays on disk; its size is checked
+                    for uid, refs, meta in enhanced_stacks(ds, path):
+                        s = series.setdefault(uid, Series(uid=uid, meta=meta))
+                        s.files += refs
+                    continue
             except Exception:
-                continue  # not DICOM (DICOMDIR viewers, html, etc.)
+                continue  # not DICOM (DICOMDIR viewers, html, etc.) or a malformed multi-frame header
             uid = getattr(ds, "SeriesInstanceUID", None)
             if not uid or not hasattr(ds, "Rows"):
                 continue
@@ -109,6 +221,10 @@ def score_series(s: Series) -> None:
         score += pts
         why.append(f"{'+' if pts >= 0 else ''}{pts:g} {reason}")
 
+    if m.get("noGeometry"):
+        s.excluded = "multi-frame file without slice positions"
+    if m.get("badFrames"):
+        s.excluded = "damaged or oversized multi-frame file"
     if (m.get("Modality") or "MR") != "MR":
         s.excluded = "not MR"
     tokens = set(re.split(r"[^A-Z0-9*]+", text))
