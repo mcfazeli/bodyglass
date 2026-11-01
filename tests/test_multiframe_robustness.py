@@ -105,3 +105,14 @@ def test_classic_file_named_like_a_frame_reference_still_loads(tmp_path):
         f.rename(tmp_path / (f.name + "#frame=3"))
     (s,) = scan_folder(str(tmp_path))
     assert load_series(s.files)[0].shape == (N, 6, 5)
+
+
+@pytest.mark.xfail(strict=True, reason="regression in c5ed5da: classic one-file-per-slice files that carry "
+                                       "NumberOfFrames=1 are excluded as multi-frame; main reads them fine")
+def test_classic_files_with_number_of_frames_one_are_still_used(tmp_path):
+    from test_multiframe import write_classic
+    write_classic(tmp_path)
+    for f in tmp_path.glob("im*.dcm"):
+        _edit(f, lambda d: setattr(d, "NumberOfFrames", 1))
+    (s,) = scan_folder(str(tmp_path))
+    assert s.excluded is None and pick_t1([s]) is s
