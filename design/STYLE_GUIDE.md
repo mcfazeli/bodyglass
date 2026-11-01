@@ -78,9 +78,14 @@ abnormal, healthy, small, large or concerning; no normal ranges. Call results "a
 (`index.html` line 270) and AI instructions follow the same rule. Privacy is stated plainly: "Your scans stay
 on this computer."
 
+## Decisions
+- **Name:** always **BodyGlass** (capital G), in the app, docs and mockups. "Bodyglass" in `design/ux_mock/`
+  is out of date.
+- **Accent:** the app's `#7cc4ff` (`--acc`) is canonical. The mockups' `#5aa9ff` is superseded; update the
+  mockups when they are next touched.
+
 ## Open questions
-1. Product name: app uses **BodyGlass**; the mockups in `design/ux_mock/` use "Bodyglass".
-2. Mockups use a different accent (`#5aa9ff`), text (`#e8edf5`) and a conic-gradient logo vs. the app's
-   `#7cc4ff` and pink radial logo (`.logo`, `style.css` line 11). Which is canonical? (Proposed: the app's.)
-3. `.gitignore` ignores every `screenshots/` folder, so golden screenshots under `design/` need a different
+1. Logo and text colour: the mockups use a conic-gradient logo and `#e8edf5` text; the app uses a pink radial
+   logo (`.logo`, `style.css` line 11) and `#e9edf5`. Proposed: the app's.
+2. `.gitignore` ignores every `screenshots/` folder, so golden screenshots under `design/` need a different
    folder name (proposed `shots/`) or an exception.
