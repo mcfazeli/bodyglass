@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 
 import pydicom
 from pydicom.encaps import parse_fragments
+from pydicom.pixels import get_decoder
 
 HEADER_TAGS = [
     "SeriesInstanceUID", "SeriesDescription", "ProtocolName", "SequenceName",
@@ -55,6 +56,18 @@ FRAME = "#frame="   # a frame of an enhanced multi-frame file is listed as "<pat
 MAX_DECODE_BYTES = 512 << 20   # loading peaks at ~5x this (float copies); 0.5 mm whole-head 3D or 6 echoes x 256^3 fit
 BAD_FRAMES = ("This multi-frame DICOM file looks damaged or is too large to open safely: its frame count or "
               "image size doesn't match its pixel data.")
+
+
+def unsupported_syntax(ds) -> str | None:
+    """A plain message naming the compression if no installed decoder can read this file's pixel data."""
+    ts = getattr(getattr(ds, "file_meta", None), "TransferSyntaxUID", None)
+    try:
+        if ts is None or get_decoder(ts).is_available:
+            return None
+    except NotImplementedError:   # a transfer syntax pydicom has no decoder for at all
+        pass
+    name = ts.name if ts.name != str(ts) else "an unknown format"
+    return f"BodyGlass can't read images compressed as {name} ({ts}). Try an uncompressed export of the scan."
 
 
 def split_ref(ref: str) -> tuple[str, int | None]:
@@ -181,6 +194,7 @@ def scan_folder(root: str) -> list[Series]:
                         and hasattr(ds, "Rows"):
                     ds = pydicom.dcmread(path, defer_size=1024)   # pixel data stays on disk; its size is checked
                     for uid, refs, meta in enhanced_stacks(ds, path):
+                        meta["unsupported"] = unsupported_syntax(ds)
                         s = series.setdefault(uid, Series(uid=uid, meta=meta))
                         s.files += refs
                     continue
@@ -192,7 +206,7 @@ def scan_folder(root: str) -> list[Series]:
             s = series.setdefault(str(uid), Series(uid=str(uid)))
             s.files.append(path)
             if not s.meta:
-                s.meta = {t: _val(ds, t) for t in HEADER_TAGS}
+                s.meta = {t: _val(ds, t) for t in HEADER_TAGS} | {"unsupported": unsupported_syntax(ds)}
     for s in series.values():
         score_series(s)
     return sorted(series.values(), key=lambda s: -s.score)
@@ -227,6 +241,8 @@ def score_series(s: Series) -> None:
         s.excluded = "damaged or oversized multi-frame file"
     if (m.get("Modality") or "MR") != "MR":
         s.excluded = "not MR"
+    if m.get("unsupported"):
+        s.excluded = m["unsupported"]
     tokens = set(re.split(r"[^A-Z0-9*]+", text))
     hard = [
         (("SWI", "SWI_", "MIP", "MINIP", "MNIP", "PHA", "SW", "SWAN"), "SWI / susceptibility"),
