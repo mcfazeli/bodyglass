@@ -77,3 +77,6 @@ venv/
 *.log
 logs/
 .DS_Store
+
+# Private, per-checkout notes
+.context/
