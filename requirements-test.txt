@@ -1,0 +1,7 @@
+# Test-only: GDCM is a second, independent decoder for tests/test_compressed_multiframe.py. The app never uses it.
+# Install with: pip install --require-hashes --only-binary :all: -r requirements-test.txt (Python 3.12 wheels)
+python-gdcm==3.2.6 \
+    --hash=sha256:512d0d903e12c5ad389939a257817bf182ce288431b3d474d62cb0c0833b8b56 \
+    --hash=sha256:7623ef789b1ba5bff0d3dfa5486e1afa27b9a33d9a81d15b4bb05c01a2570db0 \
+    --hash=sha256:ec91dd1a7bab0c235d3dcdfe0c7a4703a684a1e16cd8b092e609c4269565c76a \
+    --hash=sha256:cd32d810ff1500fde0554ef06a2f46c6bcfcbf05fdb673c62dfd40eaf611fef4
