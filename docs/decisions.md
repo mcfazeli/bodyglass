@@ -12,8 +12,11 @@ the guard never deletes files or rewrites history.
 ## 2026-11 Compressed DICOM tests use public samples and GDCM as a test-only reference
 JPEG and JPEG 2000 multi-frame decoding is tested with public files fetched by `tools/fetch_compressed_samples.sh`
 (pinned commits, SHA-256 checked, never committed). Frames decoded by pylibjpeg, which the app ships, are compared
-with an uncompressed copy or with GDCM, installed in CI only. No public multi-frame JPEG 2000 lossy file exists,
-so the test packs two real single-frame NEMA WG-04 lossy codestreams into one file. Files in a compression no
+with an uncompressed copy or with GDCM, installed in CI only. Samples come only from the official pydicom
+and GDCM test-data repositories. GDCM is pinned by version and hash in `requirements-test.txt`. Lossy files must match
+within 1 % of the stored range, except lossy colour JPEG at 1.5 %, because JPEG decoders legitimately upsample chroma
+differently by a few levels. No public multi-frame JPEG 2000 lossy file exists, so the test packs two real single-frame
+lossy CT codestreams into one file. Files in a compression no
 installed decoder can read are listed but not used, with a message naming the compression.
 
 ## 2026-10 Enhanced multi-frame MR DICOM is supported

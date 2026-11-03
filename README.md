@@ -163,6 +163,10 @@ repository; `.gitignore` blocks the common file types. The scans used for develo
 - OpenNeuro [ds004146](https://openneuro.org/datasets/ds004146) (QTAB) and [ds000221](https://openneuro.org/datasets/ds000221) (MPI-Leipzig LEMON), CC0
 - [Spine Generic multi-subject dataset](https://github.com/spine-generic/data-multi-subject) (OpenNeuro ds001919), subject amu01, defaced. Released under MIT on OpenNeuro and CC BY 4.0 in current releases. Cohen-Adad et al., *Scientific Data* 2021.
 - [datalad/example-dicom-structural](https://github.com/datalad/example-dicom-structural) (studyforrest), PDDL
+- Compressed multi-frame DICOM test files (JPEG and JPEG 2000) from [pydicom-data](https://github.com/pydicom/pydicom-data) (MIT),
+  [pydicom's test files](https://github.com/pydicom/pydicom/tree/main/src/pydicom/data/test_files) (MIT) and
+  [GDCM test data](https://github.com/malaterre/gdcmdata) (GDCM BSD-3-Clause); downloaded at pinned commits and checked by
+  SHA-256 by `tools/fetch_compressed_samples.sh`, not stored in the repository
 - [open-dicom/siemens_mprage_0](https://github.com/open-dicom/siemens_mprage_0), published as sample data without a stated licence
 
 NIfTI scans were converted to DICOM with synthetic headers (`tools/nifti_to_dicom.py`, `tools/bids_to_dicom_study.py`).
