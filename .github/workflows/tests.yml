@@ -21,6 +21,7 @@ jobs:
           cache: pip
           cache-dependency-path: |
             requirements.txt
+            requirements-test.txt
             .github/workflows/tests.yml
 
       # Same packages as install.sh on Linux (CPU-only PyTorch), plus the test-only tools
@@ -28,6 +29,7 @@ jobs:
         run: |
           pip install "torch==2.14.*" --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements.txt pytest cryptography
+          pip install --require-hashes --only-binary :all: -r requirements-test.txt
 
       # Public Spine Generic sample (OpenNeuro ds001919, sub-amu01) for the thin-slab registration test
       - name: Download public neck sample
@@ -40,6 +42,10 @@ jobs:
           4f784facd6d3a98c55753a74abb8bcaa8fff71a2f1b61cc6abb992930926af3d  sub-amu01_T1w.nii.gz
           f235f1d8441570323664636cbdc28b9e4f28669db8c31342bdb7ea1c81393fb0  sub-amu01_T2w.nii.gz
           SUMS
+
+      # Public compressed multi-frame DICOM samples (sources, licences and checksums in the script), read as data only
+      - name: Download compressed multi-frame samples
+        run: ./tools/fetch_compressed_samples.sh
 
       # Not run here (they skip themselves anywhere their inputs are missing):
       # - test_ui_cutaway.py: needs Playwright, Chrome and a sample case processed with the full model pipeline.

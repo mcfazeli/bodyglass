@@ -62,6 +62,8 @@ def score_neck(s):
 
     if (m.get("Modality") or "MR") != "MR":
         excluded = "not MR"
+    elif m.get("unsupported"):
+        excluded = m["unsupported"]
     elif m.get("noGeometry"):
         excluded = "multi-frame file without slice positions"
     elif m.get("badFrames"):
