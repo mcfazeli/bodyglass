@@ -9,6 +9,15 @@ permissions:
   contents: read
 
 jobs:
+  # Fails if a tracked file looks like a scan, a mesh, model weights or a secret (see CONTRIBUTING.md).
+  privacy-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check tracked files
+        run: python3 tools/privacy_guard.py
+
   pytest:
     runs-on: ubuntu-latest
     timeout-minutes: 30
