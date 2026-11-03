@@ -14,6 +14,7 @@ educational: it never says whether a scan is normal or abnormal. See [README.md]
 ```bash
 ./install.sh                                    # on Linux: CPU-only build and model weights
 .tools/uv/uv pip install --python .venv/bin/python pytest
+.tools/uv/uv pip install --python .venv/bin/python --require-hashes -r requirements-test.txt   # GDCM, tests only
 ./tools/fetch_compressed_samples.sh             # public compressed DICOM samples for the decoder tests
 .venv/bin/python -m pytest tests
 ```
