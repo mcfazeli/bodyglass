@@ -183,6 +183,7 @@ def add_scan(folder, cases_root, cid=None):
     mf = {"multi-frame file without slice positions", "damaged or oversized multi-frame file"}
     hint = (" It holds a multi-frame DICOM file BodyGlass can't read ('Which scans are used?' says why)."
             if any(s.excluded in mf for s in series) else "")
+    hint = next((" " + s.meta["unsupported"] for s in series if s.meta.get("unsupported")), hint)
     return {"error": "No usable scan found in this folder. BodyGlass needs a 3D T1 head scan or a sagittal neck scan "
                      "(see 'Which scans are used?' for what each kind is good for)." + hint}, 400
 

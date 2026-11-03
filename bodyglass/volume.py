@@ -5,7 +5,7 @@ import numpy as np
 import pydicom
 from scipy import ndimage
 
-from .dicom_scan import BAD_FRAMES, frame_attr, frames_bad, split_ref
+from .dicom_scan import BAD_FRAMES, frame_attr, frames_bad, split_ref, unsupported_syntax
 
 
 def _slices(files):
@@ -25,6 +25,8 @@ def _slices(files):
                 continue
             raise RuntimeError("This multi-frame DICOM file has no slice positions, so BodyGlass can't build "
                                "a 3D model from it. Try a classic (one file per slice) export of the scan.")
+        if msg := unsupported_syntax(d):
+            raise RuntimeError(msg)
         try:
             px = d.pixel_array
         except Exception as e:   # a compressed claim that doesn't decode: plain message, not a pydicom error
