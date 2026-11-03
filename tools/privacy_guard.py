@@ -16,23 +16,23 @@ ALLOWLIST = "tests/public_samples.txt"
 
 
 def guarded_patterns(gitignore: str) -> list[str]:
-    """Patterns under a `# --- <section>` header named in SECTIONS, up to the next comment line."""
+    """Patterns under a `# --- <section>` header named in SECTIONS, up to the next `# ---` header."""
     patterns, keep = [], False
     for line in gitignore.splitlines():
         line = line.strip()
-        if line.startswith("#"):
-            keep = line.startswith("# ---") and any(s in line for s in SECTIONS)
-        elif line and keep:
+        if line.startswith("# ---"):
+            keep = any(s in line for s in SECTIONS)
+        elif line and keep and not line.startswith("#"):
             patterns.append(line)
     return patterns
 
 
 def path_rule(path: str, patterns: list[str]) -> str | None:
-    parts = path.split("/")
+    parts = path.lower().split("/")  # macOS file names ignore case, so face.STL must match *.stl
     for p in patterns:
         # shortcut: no gitignore pattern here has an inner slash or `!`; extend this if one is added.
         names = parts[:-1] if p.endswith("/") else parts
-        if any(fnmatch.fnmatchcase(n, p.rstrip("/")) for n in names):
+        if any(fnmatch.fnmatchcase(n, p.rstrip("/").lower()) for n in names):
             return f"matches .gitignore pattern '{p}'"
     return None
 
@@ -60,7 +60,7 @@ def read_allowlist(text: str) -> tuple[set[str], list[str]]:
         if len(fields) < 3 or not fields[1].startswith(("https://", "http://")):
             errors.append(f"{ALLOWLIST}:{n}: needs 'path source-URL licence' on one line: {line.strip()}")
         else:
-            allowed.add(fields[0])
+            allowed.add(fields[0].lower())
     return allowed, errors
 
 
@@ -70,7 +70,7 @@ def check(root: Path, paths: list[str]) -> list[str]:
     patterns = guarded_patterns(gitignore.read_text() if gitignore.exists() else "")
     allowed, errors = read_allowlist(allow_file.read_text() if allow_file.exists() else "")
     for path in paths:
-        if path in allowed:
+        if path.lower() in allowed:
             continue
         rule = path_rule(path, patterns)
         file = root / path
