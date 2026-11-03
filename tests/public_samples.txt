@@ -1,0 +1,3 @@
+# Public sample files that may be committed despite the privacy guard (tools/privacy_guard.py).
+# One per line: <path from repo root> <source URL> <licence>
+# Only public, openly licensed samples. Never a scan of a real person that isn't already published for reuse.
