@@ -7,6 +7,7 @@ from tools import privacy_guard as guard
 GITIGNORE = """__pycache__/
 # --- Privacy: never commit scans or processed outputs ---
 *.nii.gz
+# a plain comment doesn't end the section
 DICOM/
 # --- Model weights ---
 *.pt
@@ -17,8 +18,8 @@ DICOM/
 """
 
 
-def make_repo(tmp_path: Path, files: dict[str, bytes], allowlist: str = "") -> list[str]:
-    (tmp_path / ".gitignore").write_text(GITIGNORE)
+def make_repo(tmp_path: Path, files: dict[str, bytes], allowlist: str = "", gitignore: str = GITIGNORE) -> list[str]:
+    (tmp_path / ".gitignore").write_text(gitignore)
     (tmp_path / "tests").mkdir()
     (tmp_path / guard.ALLOWLIST).write_text(allowlist)
     for name, data in files.items():
@@ -72,3 +73,16 @@ def test_allowlist_line_without_licence_fails(tmp_path):
     assert errors[0].startswith(f"{guard.ALLOWLIST}:1: needs 'path source-URL licence'")
     assert errors[1] == "tests/data/sample.dcm: is a DICOM file (DICM at byte 128)"  # not allowed, so still checked
 
+
+
+def test_mixed_case_names_are_caught_with_the_real_gitignore(tmp_path):
+    real = (Path(__file__).parent.parent / ".gitignore").read_text()
+    names = ["face.STL", "head.Obj", ".ENV", "model.PT", "weights.Safetensors", "Scan.DCM", "API_TOKEN.JSON",
+             "Dicom/b.txt", "dicom/a.txt"]
+    errors = make_repo(tmp_path, {n: b"x" for n in names}, gitignore=real)
+    assert sorted(e.split(":")[0] for e in errors) == sorted(names)
+
+
+def test_allowlist_matches_in_any_case(tmp_path):
+    allow = "tests/data/Sample.DCM https://example.org/sample.dcm CC0-1.0\n"
+    assert make_repo(tmp_path, {"tests/DATA/sample.dcm": DICOM}, allow) == []
