@@ -2,6 +2,13 @@
 
 Short log of decisions that shape BodyGlass. Newest first. Add an entry in the PR that makes or changes one.
 
+## 2026-11 CI privacy guard blocks scans, meshes, weights and secrets
+A `privacy-guard` CI job checks every tracked file against the Privacy, Model weights and Secrets sections of
+`.gitignore` (read from the file, so the lists can't drift; names compared ignoring case, as on macOS) and against DICOM, gzip and NIfTI headers, because
+`git add -f` or an unexpected file name bypasses `.gitignore`. Public samples are allowed only when listed in
+`tests/public_samples.txt` with a source URL and licence. If it finds a real file, a person decides what to do;
+the guard never deletes files or rewrites history.
+
 ## 2026-11 Compressed DICOM tests use public samples and GDCM as a test-only reference
 JPEG and JPEG 2000 multi-frame decoding is tested with public files fetched by `tools/fetch_compressed_samples.sh`
 (pinned commits, SHA-256 checked, never committed). Frames decoded by pylibjpeg, which the app ships, are compared
