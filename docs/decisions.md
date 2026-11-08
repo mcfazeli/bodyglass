@@ -11,6 +11,12 @@ MLX sources, community prebuilt files and GGUF files before conversion or markin
 This does not revalidate already-installed models on every inference or authenticate locally converted
 MLX output. It adds no dependencies or network requests beyond the existing user-started download flow.
 
+## 2026-11 AI conversations and attachments belong to one case
+Changing or closing a case clears the active conversation, drafts, attachments and preview, and stops its answer.
+Each request saves only to its original case and conversation. Late stream, file and model-loading callbacks are
+ignored after navigation; browser-storage failures cannot prevent cleanup. View attachments are available only
+once the selected case has finished rendering. Existing saved chats remain in their original per-case storage.
+
 ## 2026-11 CI privacy guard blocks scans, meshes, weights and secrets
 A `privacy-guard` CI job checks every tracked file against the Privacy, Model weights and Secrets sections of
 `.gitignore` (read from the file, so the lists can't drift; names compared ignoring case, as on macOS) and against DICOM, gzip and NIfTI headers, because
