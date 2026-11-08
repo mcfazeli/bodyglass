@@ -458,11 +458,14 @@ function buildLayerUI() {
 // ---------- structure-label overlay on slices (2D + 3D planes)
 let labTex = null, palTex = null;
 async function loadLabelVolume(base) {
+  const isCurrent = caseGuard();
   labelVol = null; labelInfo = []; sliceCache.clear(); labCache.clear();
   if (labTex) { labTex.dispose(); labTex = null; }
   const LV = manifest.labelVolume;
   if (LV && hasStructs()) {
-    labelVol = new Uint8Array(await (await fetch(base + (neckPad != null ? manifest.neck.labelFile : LV.file))).arrayBuffer());
+    const bytes = await (await fetch(base + (neckPad != null ? manifest.neck.labelFile : LV.file))).arrayBuffer();
+    if (!isCurrent()) return;
+    labelVol = new Uint8Array(bytes);
     const pal = new Uint8Array(256 * 4);
     const add = (code, sid) => {
       const S = structById[sid]; if (!S) return;
@@ -605,25 +608,31 @@ const sequences = () => (manifest && manifest.sequences) || [];
 const seqPending = () => Object.keys((manifest && manifest.sequencesFound) || {}).filter((k) => !sequences().some((q) => q.kind === k) && k !== 'swi_phase');
 let seqTex = null, zoneVol = null, zoneTex = null;
 async function ensureZone() {
+  const isCurrent = caseGuard();
   if (zoneVol || !manifest.brainZone || noVol) return;
-  zoneVol = padZ(new Uint8Array(await (await fetch(`${caseBase()}${manifest.brainZone}`)).arrayBuffer()));
+  const bytes = await (await fetch(`${caseBase()}${manifest.brainZone}`)).arrayBuffer();
+  if (!isCurrent()) return;
+  zoneVol = padZ(new Uint8Array(bytes));
   zoneTex = new THREE.Data3DTexture(zoneVol, dims[0], dims[1], dims[2]);
   zoneTex.format = THREE.RedFormat; zoneTex.type = THREE.UnsignedByteType; zoneTex.minFilter = zoneTex.magFilter = THREE.NearestFilter; zoneTex.unpackAlignment = 1; zoneTex.needsUpdate = true;
   sliceCache.clear();
 }
 async function ensureSeq(kind) {
+  const isCurrent = caseGuard();
   const meta = sequences().find((q) => q.kind === kind); if (!meta) return null;
   const S = seqData[kind] || (seqData[kind] = { meta });
   S.meta = meta;
   if (!S.vol) {
-    S.loading = S.loading || fetch(`${caseBase()}${meta.file}`).then((r) => r.arrayBuffer()).then((b) => { S.vol = padZ(new Uint8Array(b)); });
+    S.loading = S.loading || fetch(`${caseBase()}${meta.file}`).then((r) => r.arrayBuffer()).then((b) => { if (isCurrent()) S.vol = padZ(new Uint8Array(b)); });
     $('#scanNote').textContent = `Loading ${meta.name}…`;
-    await S.loading; $('#scanNote').textContent = '';
+    await S.loading; if (!isCurrent()) return null; $('#scanNote').textContent = '';
   }
   return S;
 }
 async function setSeq(kind, opts = {}) {
-  if (kind && kind !== 'none') { if (!(await ensureSeq(kind))) kind = null; else await ensureZone(); } else kind = null;
+  const isCurrent = caseGuard();
+  if (kind && kind !== 'none') { if (!(await ensureSeq(kind))) kind = null; else { if (!isCurrent()) return; await ensureZone(); } } else kind = null;
+  if (!isCurrent()) return;
   seqKind = kind;
   if (seqTex) { seqTex.dispose(); seqTex = null; }
   if (kind) {
@@ -691,11 +700,14 @@ function cycleSeq(dir = 1) {
 }
 async function pollSequences() {
   if (!currentCase || !manifest) return;
+  const isCurrent = caseGuard();
   const st = (await (await fetch('api/state')).json()).sequences || {};
+  if (!isCurrent()) return;
   if (!seqPending().length && (manifest.veins || !sequences().some((q) => q.kind === 'swi' || q.kind === 'mip'))) return;
   const active = st.status === 'running' && st.caseId === currentCase;
   seqProgress = active ? `${Math.round(st.pct)}%` : '';
   const m = await (await fetch(`${caseBase()}manifest.json`)).json();
+  if (!isCurrent()) return;
   if ((m.sequences || []).length !== sequences().length) { manifest.sequences = m.sequences; }
   if (m.veins && !manifest.veins) { manifest.veins = m.veins; addVeinsLive(); }
   buildScansUI();
@@ -769,8 +781,10 @@ setupCompareInput();
 // ---------- vein tree: traced from the aligned SWI scan, off by default
 const VEIN_TEXT = 'Veins traced automatically from the SWI scan: oxygen-poor blood in veins is dark on SWI, and a "vesselness" filter follows those dark tubes. Only the part of the head the SWI covered can show veins, and small or faint veins are missed while some dark non-vein spots can be included. A rough educational picture, not a medical vessel study.';
 async function loadVeins(base) {
+  const isCurrent = caseGuard();
   const V = manifest.veins; if (!V || !V.file || layers.veins) return;
   const g = await loader.loadAsync(base + V.file);
+  if (!isCurrent()) return;
   const mesh = firstMesh(g);
   mesh.geometry.computeVertexNormals();
   const material = fresnelPatch(new THREE.MeshPhysicalMaterial({ color: new THREE.Color('#4d6bff'), roughness: 0.35, clearcoat: 0.6, clearcoatRoughness: 0.25,
@@ -1095,7 +1109,7 @@ async function openLibrary() {
       <div class="small muted">Saved ${c.createdAt ? new Date(c.createdAt).toLocaleString() : ''}</div>`;
     const post = (p, body) => fetch(p, { method: 'POST', body: JSON.stringify({ caseId: c.caseId, ...body }) }).then((r) => r.json());
     el.querySelector('.libname').onchange = async (e) => { await post('api/case/rename', { name: e.target.value }); if (c.caseId === currentCase) { manifest.person = { name: e.target.value.trim() }; updatePerson(); } toast('Renamed'); };
-    el.querySelector('.libOpen')?.addEventListener('click', async () => { closeLibrary(); currentCase = c.caseId; history.replaceState(null, '', '?case=' + c.caseId); await loadCase(c.caseId); if (!hasStructs()) pollPhase2(); });
+    el.querySelector('.libOpen')?.addEventListener('click', async () => { closeLibrary(); history.replaceState(null, '', '?case=' + c.caseId); await loadCase(c.caseId); if (!hasStructs()) pollPhase2(); });
     el.querySelector('.libClose')?.addEventListener('click', () => { closeLibrary(); closeCase(); });
     el.querySelector('.libFinder')?.addEventListener('click', () => post('api/reveal'));
     el.querySelector('.libNeck')?.addEventListener('click', () => addNeck(c.caseId));
@@ -1114,7 +1128,7 @@ $('#btnPerson').onclick = () => ($('#library').classList.contains('hidden') ? op
 $('#libClose').onclick = closeLibrary;
 $('#libReveal').onclick = () => fetch('api/reveal', { method: 'POST', body: '{}' });
 function closeCase() {
-  clearScene(); manifest = null; currentCase = null; history.replaceState(null, '', location.pathname); updatePerson(); hideInfo();
+  clearScene(); manifest = null; ai.loading = false; changeCase(null); history.replaceState(null, '', location.pathname); updatePerson(); hideInfo();
   showWelcome();
 }
 function showWelcome() { setLoading(false); $('#welcome').classList.remove('hidden'); }
@@ -1125,8 +1139,8 @@ $('#aExample').onclick = () => { $('#addMenu').classList.add('hidden'); openExam
 async function openExampleVolunteer() {
   const info = await (await fetch('api/example')).json();
   if (!info.available) return toast('The example volunteer is not installed. Run ./install.sh again to add it.', 'err');
-  hideWelcome(); currentCase = 'example:' + info.caseId; history.replaceState(null, '', '?case=' + currentCase);
-  await loadCase(currentCase);
+  hideWelcome(); const cid = 'example:' + info.caseId; history.replaceState(null, '', '?case=' + cid);
+  await loadCase(cid);
   toast(`Example volunteer: ${info.credit} ${info.license}.`, '', 8000);
   maybeAutoTour();
 }
@@ -1460,11 +1474,13 @@ function setRegionColors(on) {
   for (const S of Object.values(structById)) if (S.st.group === 'cortex' || S.st.key === 'cerebellum') S.item.material.color.copy(on ? S.item.baseColor : BRAIN_PINK);
 }
 async function loadStructures(base) {
+  const isCurrent = caseGuard();
   const groups = Object.entries(manifest.structureGroups).sort((a, b) => a[1].order - b[1].order);
   for (const [gid, g] of groups) if (manifest.structures.some((s) => s.group === gid)) layers['g:' + gid] = { def: { id: 'g:' + gid, name: g.name, color: GROUP_DOT[gid], group: gid }, items: [], visible: true, opacity: 1 };
   let n = 0;
   await Promise.all(manifest.structures.map(async (st) => {
     const g = await loader.loadAsync(base + st.file);
+    if (!isCurrent()) return;
     const mesh = firstMesh(g);
     mesh.geometry.computeVertexNormals();
     const shaded = toShading(mesh.geometry);
@@ -1484,9 +1500,12 @@ async function loadStructures(base) {
     structById[st.id] = { st, item, L: layers['g:' + st.group] };
     setLoading(true, `Loading ${st.name}…`, 50 + 45 * (++n / manifest.structures.length));
   }));
+  if (!isCurrent()) return;
   for (const st of manifest.structures) layers['g:' + st.group].items.push(structById[st.id].item); // manifest order
   for (const id of ['brain', 'white_matter', 'ventricles']) if (layers[id]) layers[id].hidden = true;
-  parcels = manifest.parcels ? padZ(new Uint8Array(await (await fetch(base + manifest.parcels.file)).arrayBuffer())) : null;
+  const bytes = manifest.parcels ? await (await fetch(base + manifest.parcels.file)).arrayBuffer() : null;
+  if (!isCurrent()) return;
+  parcels = bytes ? padZ(new Uint8Array(bytes)) : null;
   setRegionColors(regionColors);
 }
 function buildStructUI() {
@@ -1594,16 +1613,22 @@ function clearScene(keepCam) {
   for (const k in layers) delete layers[k]; for (const k in planes) delete planes[k];
   for (const k in structById) delete structById[k];
   for (const k in labelEls) { labelEls[k].remove(); delete labelEls[k]; }
-  isolateId = null; selected = null; parcels = null; meas.pts = []; redrawMeasure(); endTour(); closeExample();
+  isolateId = null; selected = null; aiSel = null; parcels = null; meas.pts = []; redrawMeasure(); endTour(); closeExample();
   keepSeq = keepCam ? seqKind : null; seqKind = null; if (seqTex) { seqTex.dispose(); seqTex = null; }
   if (!keepCam) { for (const k in seqData) delete seqData[k]; }
   zoneVol = null; if (zoneTex) { zoneTex.dispose(); zoneTex = null; }
+  vol = null; labelVol = null; sliceCache.clear(); labCache.clear(); renderedCase = null;
+  for (const name of ['axial', 'coronal', 'sagittal']) { const c = $('#c-' + name); c.getContext('2d').clearRect(0, 0, c.width, c.height); }
 }
 async function loadCase(cid, keepCam) {
+  ai.loading = true; changeCase(cid); aiCtxChanged();
+  const isCurrent = caseGuard();
   setLoading(true, 'Loading 3D model…', 5); hideWelcome();
   clearScene(keepCam);
   const base = caseBase(cid);
-  manifest = await (await fetch(base + 'manifest.json')).json();
+  const nextManifest = await (await fetch(base + 'manifest.json')).json();
+  if (!isCurrent()) return;
+  manifest = nextManifest;
   const N = manifest.neck && manifest.neck.status === 'ok' && manifest.structures ? manifest.neck : null, oldPad = neckPad;
   neckPad = N ? N.pad : null;
   if (N) { manifest.structures = [...manifest.structures, ...N.structures]; manifest.structureGroups = { ...manifest.structureGroups, spine: N.group }; manifest.structureInfo = { ...manifest.structureInfo, ...N.structureInfo }; }
@@ -1611,14 +1636,19 @@ async function loadCase(cid, keepCam) {
   sp = manifest.volume.spacing[0];
   dims = [...manifest.volume.dims]; origin = [...manifest.volume.origin];
   dims[2] += neckPad || 0; origin[2] -= (neckPad || 0) * sp;   // slices continue below the brain scan into the neck
-  const vr = await fetch(base + (N ? N.volumeFile : manifest.volume.file)); noVol = !vr.ok;   // the example volunteer ships without picture slices
-  vol = noVol ? new Uint8Array(dims[0] * dims[1] * dims[2]) : new Uint8Array(await vr.arrayBuffer());
+  const vr = await fetch(base + (N ? N.volumeFile : manifest.volume.file));
+  if (!isCurrent()) return;
+  const bytes = vr.ok ? await vr.arrayBuffer() : null;
+  if (!isCurrent()) return;
+  noVol = !vr.ok;   // the example volunteer ships without picture slices
+  vol = noVol ? new Uint8Array(dims[0] * dims[1] * dims[2]) : new Uint8Array(bytes);
   document.body.classList.toggle('novol', noVol);
   clearAir(vol, dims);
   centered.position.set(...manifest.brainCenter.map((v) => -v));
   let n = 0;
   await Promise.all(manifest.layers.map(async (def) => {
     const g = await loader.loadAsync(base + def.file);
+    if (!isCurrent()) return;
     const mesh = firstMesh(g);
     mesh.geometry.computeVertexNormals();
     const material = makeMaterial(def, !!mesh.geometry.attributes.color);
@@ -1629,14 +1659,19 @@ async function loadCase(cid, keepCam) {
     layers[def.id] = { def, items: [{ mesh: m, material }], visible: true, opacity: 1 };
     setLoading(true, `Loading ${def.name}…`, 10 + 40 * (++n / manifest.layers.length));
   }));
+  if (!isCurrent()) return;
   // keep panel order = manifest order
   const ordered = {}; for (const d of manifest.layers) ordered[d.id] = layers[d.id];
   for (const k in layers) delete layers[k]; Object.assign(layers, ordered);
   if (hasStructs()) await loadStructures(base);
+  if (!isCurrent()) return;
   await loadVeins(base);
+  if (!isCurrent()) return;
   buildLayerUI(); buildSeriesUI(); buildStructUI(); buildPlanes();
   await loadLabelVolume(base);
+  if (!isCurrent()) return;
   buildScansUI(); if (keepSeq) await setSeq(keepSeq, { quiet: true });
+  if (!isCurrent()) return;
   if (seqPending().length) setTimeout(pollSequences, 1500);
   for (const L of Object.values(layers)) if (L.hidden) applyOpacity(L);
   // stage placement: floor just under the head
@@ -1653,9 +1688,12 @@ async function loadCase(cid, keepCam) {
   if (!keepCam) { setView(params.get('cam') || '3q', true); setFocusTag(null); }
   updateRegionBar(); updatePerson(); buildExplore();
   offerReskin();
+  renderedCase = cid; drawInsetsNow();   // only this case can supply AI view/slice attachments
+  ai.loading = false; aiCtxChanged();
   setLoading(false);
 }
-let currentCase = null;
+let currentCase = null, caseVersion = 0, renderedCase = null;
+const caseGuard = () => { const version = caseVersion; return () => version === caseVersion; };
 async function pollPhase2() {
   const s = await (await fetch('api/state')).json();
   const P = s.phase2 || {};
@@ -1669,7 +1707,7 @@ async function pollProcessing() {
   if (s.status === 'running') { hideWelcome(); setLoading(true, s.msg, s.pct); showSteps(s.pct); setTimeout(pollProcessing, 600); }
   else if (s.status === 'done' && s.caseId) {
     const fresh = s.caseId !== currentCase || !manifest;
-    history.replaceState(null, '', '?case=' + s.caseId); currentCase = s.caseId; await loadCase(s.caseId);
+    history.replaceState(null, '', '?case=' + s.caseId); await loadCase(s.caseId);
     $('#steps').classList.add('hidden');
     if (firstBuild && fresh) { firstBuild = false; toast('✓ Your 3D model is ready. Detailed structures follow in the background.'); maybeAutoTour(); }
     if (!hasStructs()) pollPhase2();
@@ -1747,12 +1785,13 @@ requestAnimationFrame(tick);
 const LS = { get: (k) => localStorage.getItem('bg.' + k), set: (k, v) => localStorage.setItem('bg.' + k, v), del: (k) => localStorage.removeItem('bg.' + k) };
 const escH = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const postJ = (p, body) => fetch(p, { method: 'POST', body: JSON.stringify(body || {}) }).then((r) => r.json());
-const ai = { state: null, chat: null, extra: [], removed: new Set(), ctrl: null, poll: null, cgModels: null, lastReq: null };
+const ai = { state: null, chat: null, extra: [], removed: new Set(), ctrl: null, poll: null, cgModels: null, lastReq: null, caseId: null, epoch: 0, request: null, fileEpoch: null, loading: false };
 const fmtMin = (s) => (s == null ? '' : s < 90 ? 'about a minute left' : `about ${Math.round(s / 60)} min left`);
 function measText() { return meas.pts.length === 2 ? `${meas.pts[0].distanceTo(meas.pts[1]).toFixed(1)} mm` : null; }
 function onScreen() { return Object.values(layers).filter((L) => !L.hidden && L.visible && L.items.some((it) => it.mesh.visible && it.material.opacity > 0.15)).map((L) => L.def.name); }
 // what the AI will see: chips from the screen (removable) + what the user added (pictures, report)
 function autoChips() {
+  if (ai.loading || !currentCase || renderedCase !== currentCase) return [];   // the previous model and its slice canvases are not the new case
   const out = [];
   if (aiSel) out.push({ key: 'part:' + aiSel.name, icon: '◉', label: aiSel.name + (aiSel.volumeMl ? ` · ${fmtMl(aiSel.volumeMl)} mL` : ''), part: aiSel });
   const m = measText(); if (m) out.push({ key: 'meas:' + m, icon: '📏', label: 'Distance ' + m, meas: `Distance ${m} (between two points I clicked)` });
@@ -1866,19 +1905,54 @@ $('#modelBtn').onclick = (e) => { e.stopPropagation(); $('#modelMenu').classList
 document.addEventListener('click', (e) => { if (!e.target.closest('#modelMenu, #modelBtn')) $('#modelMenu').classList.add('hidden'); if (!e.target.closest('#attachMenu, #attachBtn')) $('#attachMenu').classList.add('hidden'); });
 // chats, saved per person on this computer (localStorage of this local page; nothing leaves the Mac)
 // shortcut: localStorage is per browser + port; move to files in Application Support if people switch browsers
-const chatKey = () => 'chats.' + (currentCase || 'none');
-const allChats = () => { try { return JSON.parse(LS.get(chatKey()) || '[]'); } catch (e) { return []; } };
-function saveChat() { if (!ai.chat || !ai.chat.msgs.length) return; const all = allChats().filter((c) => c.id !== ai.chat.id); all.unshift(ai.chat); LS.set(chatKey(), JSON.stringify(all.slice(0, 50))); }
-function newChat() { ai.chat = null; ai.extra = []; $('#histList').classList.add('hidden'); aiRender(); $('#chatQ').focus(); }
+const chatKey = (caseId) => 'chats.' + (caseId || 'none');
+const allChats = (caseId) => { try { return JSON.parse(LS.get(chatKey(caseId)) || '[]').filter((c) => c.caseId === undefined || c.caseId === caseId); } catch (e) { return []; } };
+function saveChat(caseId, chat) {
+  if (!chat || chat.caseId !== caseId || !chat.msgs.length) return;
+  try {
+    const all = allChats(caseId).filter((c) => c.id !== chat.id); all.unshift(chat);
+    LS.set(chatKey(caseId), JSON.stringify(all.slice(0, 50)));
+  } catch (e) { toast('This chat could not be saved on this computer. Browser storage may be full.', 'err'); }
+  // Persistence is best-effort: a quota/storage error must never prevent case isolation or Stop.
+}
+function stopChat() {
+  const r = ai.request; if (!r) return;
+  ai.request = null; ai.ctrl = null; r.ctrl.abort(); r.answer.stopped = true;
+  saveChat(r.caseId, r.chat); setSending(false);
+}
+function resetChat(chat = null) {
+  stopChat(); ai.epoch++; ai.chat = chat; ai.extra = []; ai.removed.clear(); ai.lastReq = null; ai.fileEpoch = null;
+  for (const id of ['#chatQ', '#reportText', '#imgFile']) $(id).value = '';
+  for (const id of ['#histList', '#chatLog', '#chips', '#exactText']) $(id).textContent = '';
+  for (const id of ['#histList', '#reportBox', '#exactBox', '#attachMenu']) $(id).classList.add('hidden');
+  autoGrow(); aiRender();
+}
+function changeCase(caseId) {
+  if (caseId === currentCase) return;
+  // Invalidate callbacks before a new model starts loading, even when the chat panel is closed.
+  caseVersion++; renderedCase = null;
+  currentCase = caseId; ai.caseId = caseId; aiSel = null; resetChat();
+}
+function newChat() { resetChat(); $('#chatQ').focus(); }
 $('#chatNew').onclick = newChat;
 $('#chatHist').onclick = () => {
   const h = $('#histList'); if (!h.classList.contains('hidden')) return h.classList.add('hidden');
-  const all = allChats();
+  const caseId = ai.caseId, epoch = ai.epoch, all = allChats(caseId);
   h.innerHTML = all.length ? '' : '<p class="small muted">No saved chats for this person yet.</p>';
   for (const c of all) {
     const r = document.createElement('div'); r.className = 'hrow';
     r.innerHTML = `<span class="t">${escH(c.title)}</span><small>${escH(c.model || '')} · ${new Date(c.at).toLocaleDateString()}</small><button class="ghost icon" title="Delete this chat">🗑</button>`;
-    r.onclick = (e) => { if (e.target.closest('button')) { LS.set(chatKey(), JSON.stringify(allChats().filter((x) => x.id !== c.id))); if (ai.chat && ai.chat.id === c.id) ai.chat = null; h.classList.add('hidden'); $('#chatHist').click(); aiRender(); return; } ai.chat = c; h.classList.add('hidden'); aiRender(); };
+    r.onclick = (e) => {
+      if (epoch !== ai.epoch || caseId !== currentCase) return;
+      if (e.target.closest('button')) {
+        if (ai.chat && ai.chat.id === c.id) resetChat();
+        LS.set(chatKey(caseId), JSON.stringify(allChats(caseId).filter((x) => x.id !== c.id)));
+        h.classList.add('hidden'); $('#chatHist').click(); aiRender(); return;
+      }
+      stopChat();   // save a stopped answer before reloading the same conversation from history
+      const chat = allChats(caseId).find((x) => x.id === c.id);
+      if (chat) { chat.caseId = caseId; resetChat(chat); }
+    };
     h.appendChild(r);
   }
   h.classList.remove('hidden');
@@ -1954,45 +2028,56 @@ function renderSuggest() {
 // sending, streamed; Stop aborts the request and the server stops generating
 async function send(text, opts = {}) {
   text = (text ?? $('#chatQ').value).trim(); if (!text || ai.ctrl) return;
+  if (ai.caseId !== currentCase || (ai.chat && ai.chat.caseId !== currentCase)) return;
+  if (ai.loading) return toast('Wait for this model to finish loading before asking AI.');
   if (curBackend() === 'chatgpt' && LS.get('cgConsent') !== '1') return aiRender();
   const { ctx, image } = aiCtx(), cs = chips();
-  if (!ai.chat) ai.chat = { id: Date.now().toString(36), title: text.slice(0, 60), at: Date.now(), model: modelLabel().replace(/^[🔒☁] /, ''), msgs: [] };
-  const history = ai.chat.msgs.filter((m) => !m.error).map((m) => ({ role: m.role, text: m.role === 'user' ? m.text : splitThink(m.text)[0] }));
+  if (!ai.chat) ai.chat = { caseId: ai.caseId, id: crypto.randomUUID(), title: text.slice(0, 60), at: Date.now(), model: modelLabel().replace(/^[🔒☁] /, ''), msgs: [] };
+  const chat = ai.chat, caseId = ai.caseId, epoch = ai.epoch;
+  const history = chat.msgs.filter((m) => !m.error).map((m) => ({ role: m.role, text: m.role === 'user' ? m.text : splitThink(m.text)[0] }));
   const req = { backend: curBackend(), model: curBackend() === 'chatgpt' ? LS.get('cgModel') : (activeLocal() || {}).id, ctx, question: text, history, image };
   ai.lastReq = req;
   const um = { role: 'user', text, ctx: cs.filter((c) => !c.image).map((c) => c.label).join(' · '), thumb: image, mentions: opts.mentions };
-  ai.chat.msgs.push(um); $('#chatQ').value = ''; autoGrow();
+  chat.msgs.push(um); $('#chatQ').value = ''; autoGrow();
   ai.extra = ai.extra.filter((c) => !c.image && !c.report);   // a picture / report goes with one message
   renderLog(); renderChips(); renderSuggest();
-  const am = { role: 'assistant', text: '', model: '' }; ai.chat.msgs.push(am);
+  const am = { role: 'assistant', text: '', model: '' }; chat.msgs.push(am);
   const el = msgEl(am, true); $('#chatLog').appendChild(el); $('#chatBody').scrollTop = 1e9;
   el.querySelector('.caret').insertAdjacentHTML('beforebegin', `<span class="muted small">${req.backend === 'chatgpt' ? 'Asking ChatGPT…' : 'Thinking on this Mac… (the first answer loads the model)'}</span>`);
-  ai.ctrl = new AbortController(); setSending(true);
+  const ctrl = new AbortController();
+  const request = { ctrl, caseId, chat, answer: am }; ai.request = request; ai.ctrl = ctrl; setSending(true);
+  const isCurrent = () => ai.request === request && ai.epoch === epoch && currentCase === caseId && ai.chat === chat;
+  saveChat(caseId, chat);
   let buf = '', cur = el;
   try {
-    const r = await fetch('api/ai/chat', { method: 'POST', body: JSON.stringify(req), signal: ai.ctrl.signal });
+    const r = await fetch('api/ai/chat', { method: 'POST', body: JSON.stringify(req), signal: ctrl.signal });
+    if (!isCurrent()) return;
     if (!r.ok) { const j = await r.json().catch(() => ({})); throw Object.assign(new Error(j.error || 'The AI could not answer.'), { fix: j.fix || 'retry' }); }
     const rd = r.body.getReader(), dec = new TextDecoder();
     for (;;) {
-      const { value, done } = await rd.read(); if (done) break;
+      const { value, done } = await rd.read(); if (!isCurrent()) { await rd.cancel(); return; } if (done) break;
       buf += dec.decode(value, { stream: true });
       let i; while ((i = buf.indexOf('\n')) >= 0) {
         const ev = JSON.parse(buf.slice(0, i)); buf = buf.slice(i + 1);
         if (ev.error) throw Object.assign(new Error(ev.error), { fix: ev.fix });
-        if (ev.model) { am.model = ev.model; am.note = ev.note; ai.chat.model = ev.model; }
+        if (ev.model) { am.model = ev.model; am.note = ev.note; chat.model = ev.model; }
         if (ev.t) am.text += ev.t;
         if (ev.caveat) am.caveat = ev.caveat;
       }
       const n = msgEl(am, true); cur.replaceWith(n); cur = n; $('#chatBody').scrollTop = 1e9;
     }
   } catch (e) {
+    if (!isCurrent()) return;
     if (e.name === 'AbortError') am.stopped = true;
     else if (!am.text) Object.assign(am, { error: true, text: e.message === 'Failed to fetch' ? 'BodyGlass lost contact with its own server. Is the BodyGlass window still open?' : e.message, fix: e.fix || 'retry' });
     else Object.assign(am, { stopped: true, note: (am.note ? am.note + ' · ' : '') + e.message });
   } finally {
-    ai.ctrl = null; setSending(false);
-    const n = msgEl(am); cur.replaceWith(n); $('#chatBody').scrollTop = 1e9;
-    saveChat();
+    // An older request must not clear a newer Stop button, render, or recreate a deleted chat.
+    if (isCurrent()) {
+      ai.request = null; ai.ctrl = null; setSending(false);
+      const n = msgEl(am); cur.replaceWith(n); $('#chatBody').scrollTop = 1e9;
+      saveChat(caseId, chat);
+    }
   }
 }
 function setSending(on) { const b = $('#sendBtn'); b.classList.toggle('stop', on); b.textContent = on ? '■' : '↑'; b.title = on ? 'Stop' : 'Send (Return)'; }
@@ -2005,7 +2090,7 @@ $('#chatQ').addEventListener('paste', (e) => {   // a pasted report becomes a re
   e.preventDefault(); addReport(t); if (!$('#chatQ').value.trim()) { $('#chatQ').value = 'Explain my report in plain words.'; autoGrow(); }
 });
 async function runFix(fix) {
-  if (fix === 'retry' && ai.lastReq) { const q = ai.lastReq.question; ai.chat.msgs.splice(-2, 2); renderLog(); return send(q); }
+  if (fix === 'retry' && ai.lastReq && ai.chat && !ai.ctrl) { const q = ai.lastReq.question; ai.chat.msgs.splice(-2, 2); renderLog(); return send(q); }
   if (fix === 'signin') return cgSignIn();
   if (fix === 'usage') return window.open(ai.state.chatgpt.usageUrl, '_blank', 'noopener');
   if (fix === 'setup') { LS.del('aiModel'); $('#aiWelcome').classList.remove('hidden'); $('#chatBody').classList.add('hidden'); $('#composer').classList.add('hidden'); return renderWelcome(); }
@@ -2013,12 +2098,14 @@ async function runFix(fix) {
   if (fix === 'image_model' && ai.state.setup.plan.runtime !== 'mlx') return toast('Reading pictures on this computer needs a Mac with Apple silicon. ChatGPT (menu at the top) can read them.', '', 7000);
   if (fix === 'image_model') { const id = ai.state.setup.plan.vision ? ai.state.setup.plan.id : 'qwen3.5-4b'; await postJ('api/ai/models/download', { id, variant: '4' }); toast('Downloading the picture-reading model. Progress: Manage models.'); return openAiModels(); }
 }
-function showExact() { postJ('api/ai/preview', { ...aiCtx(), question: $('#chatQ').value || '(your question)', history: [] }).then((r) => { $('#exactText').textContent = r.preview || r.error; $('#exactBox').classList.remove('hidden'); }); }
+function showExact() { if (ai.loading) return; const epoch = ai.epoch; postJ('api/ai/preview', { ...aiCtx(), question: $('#chatQ').value || '(your question)', history: [] }).then((r) => { if (epoch !== ai.epoch) return; $('#exactText').textContent = r.preview || r.error; $('#exactBox').classList.remove('hidden'); }); }
 $('#exactClose').onclick = () => $('#exactBox').classList.add('hidden');
 // pictures and reports
-function toPng(src, warn, label) {
+function toPng(src, warn, label, epoch = ai.epoch) {
+  if (epoch !== ai.epoch) return;
   const img = new Image();
   img.onload = () => {
+    if (epoch !== ai.epoch) return;
     const k = Math.min(1, 1024 / Math.max(img.width, img.height)), c = document.createElement('canvas');
     c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
     c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
@@ -2026,28 +2113,30 @@ function toPng(src, warn, label) {
     ai.extra.push({ key: 'img', icon: '🖼', label, image: c.toDataURL('image/png'), warn });
     renderChips(); $('#chatQ').focus();
   };
-  img.onerror = () => toast('That file is not a picture BodyGlass can read', 'err');
+  img.onerror = () => epoch === ai.epoch && toast('That file is not a picture BodyGlass can read', 'err');
   img.src = src;
 }
 const skinShown = () => layers.skin && layers.skin.items.some((it) => it.mesh.visible && it.material.opacity > 0.05);
 function attach(a) {
+  if ((ai.loading || !currentCase || renderedCase !== currentCase) && ['axial', 'coronal', 'sagittal', 'snap'].includes(a)) return toast('Wait for this model to finish loading before attaching a view.');
   $('#attachMenu').classList.add('hidden');
   if (['axial', 'coronal', 'sagittal'].includes(a)) {
     if (document.body.classList.contains('novol')) return toast('This model has no slice pictures', 'err');
     return toPng($('#c-' + a).toDataURL('image/png'), a === 'sagittal' ? 'may show your face' : null, `${a[0].toUpperCase() + a.slice(1)} slice`);
   }
   if (a === 'snap') { renderer.render(scene, camera); return toPng(canvas.toDataURL('image/png'), skinShown() ? 'skin is on: may show your face' : null, '3D view'); }
-  if (a === 'file') return $('#imgFile').click();
+  if (a === 'file') { ai.fileEpoch = ai.epoch; return $('#imgFile').click(); }
   if (a === 'report') return openReport();
 }
 $('#attachBtn').onclick = (e) => { e.stopPropagation(); $('#attachMenu').classList.toggle('hidden'); };
 document.querySelectorAll('#attachMenu .mi').forEach((b) => (b.onclick = () => attach(b.dataset.a)));
-function readFile(f) {
-  if (f.type.startsWith('image/')) { const r = new FileReader(); r.onload = () => toPng(r.result, null, f.name.slice(0, 30)); r.readAsDataURL(f); return; }
-  if (f.type.startsWith('text/') || /\.txt$/i.test(f.name)) { f.text().then((t) => { openReport(); $('#reportText').value = t.slice(0, 12000); }); return; }
+function readFile(f, epoch = ai.epoch) {
+  if (epoch !== ai.epoch) return;
+  if (f.type.startsWith('image/')) { const r = new FileReader(); r.onload = () => toPng(r.result, null, f.name.slice(0, 30), epoch); r.readAsDataURL(f); return; }
+  if (f.type.startsWith('text/') || /\.txt$/i.test(f.name)) { f.text().then((t) => { if (epoch !== ai.epoch) return; openReport(); $('#reportText').value = t.slice(0, 12000); }); return; }
   toast('Drop a picture (PNG or JPEG) or a text file with your report', 'err');
 }
-$('#imgFile').onchange = (e) => { if (e.target.files[0]) readFile(e.target.files[0]); e.target.value = ''; };
+$('#imgFile').onchange = (e) => { if (e.target.files[0]) readFile(e.target.files[0], ai.fileEpoch); ai.fileEpoch = null; e.target.value = ''; };
 $('#chat').addEventListener('dragover', (e) => { e.preventDefault(); $('#chat').classList.add('drop'); });
 $('#chat').addEventListener('dragleave', (e) => { if (!e.relatedTarget || !$('#chat').contains(e.relatedTarget)) $('#chat').classList.remove('drop'); });
 $('#chat').addEventListener('drop', (e) => { e.preventDefault(); $('#chat').classList.remove('drop'); if (e.dataTransfer.files[0]) readFile(e.dataTransfer.files[0]); else { const t = e.dataTransfer.getData('text'); if (t) { openReport(); $('#reportText').value = t; } } });
@@ -2121,7 +2210,7 @@ fetch('api/state').then((r) => r.json()).then((st) => { serverMac = !!st.mac; $(
   }
   if (st.status === 'running') return;
   if (!cid) { setLoading(false); showWelcome(); return; }
-  currentCase = cid; await loadCase(cid);
+  await loadCase(cid);
   if (!hasStructs()) pollPhase2();
   for (const p of (params.get('planes') || '').split(',').filter(Boolean)) enablePlane(p, true);
   if (params.get('cut') === '1') { $('#cutaway').checked = true; updateClipping(); }
