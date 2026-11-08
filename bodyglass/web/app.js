@@ -539,26 +539,27 @@ function seriesWhy(s, ch, role) {
 }
 // shortcut: a rebuild from another series makes a second model of the same person (case id = series); the old one stays in My body
 const canUseFor3D = (s, ch) => !s.excluded && s.uid !== ch.uid && s.nFiles >= 60;
+// DICOM and saved-manifest strings are text, including values in quoted attributes.
 function buildSeriesUI() {
   const ch = manifest.series.chosen, all = manifest.series.all;
-  $('#seriesInfo').innerHTML = `3D model built from <b>${ch.description || 'the T1 scan'}</b>` +
+  $('#seriesInfo').innerHTML = `3D model built from <b>${escH(ch.description || 'the T1 scan')}</b>` +
      `<br><span class="small">${all.length} series found in this exam · everything ran on this computer</span>`;
   const rows = all.map((s) => ({ s, role: seriesRole(s, ch) })).sort((a, b) => 'model neck veins slices none'.indexOf(a.role) - 'model neck veins slices none'.indexOf(b.role));
   const N = manifest.neck;
   $('#seriesPlain').innerHTML = rows.map(({ s, role }) => `<div class="series ${role}">
-     <div class="sname"><span class="role ${ROLE[role][1]}">${ROLE[role][0]}</span> ${s.description || '(no name)'}</div>
-     <div class="why">${seriesWhy(s, ch, role)}${canUseFor3D(s, ch) ? ` <button class="link use3d" data-uid="${s.uid}">Use for 3D instead</button>` : ''}</div></div>`).join('') +
-     (N && N.series ? `<div class="series neck"><div class="sname"><span class="role ok">Neck</span> ${N.series.description || 'neck exam'}</div>
+     <div class="sname"><span class="role ${ROLE[role][1]}">${ROLE[role][0]}</span> ${escH(s.description || '(no name)')}</div>
+     <div class="why">${escH(seriesWhy(s, ch, role))}${canUseFor3D(s, ch) ? ` <button class="link use3d" data-uid="${escH(s.uid)}">Use for 3D instead</button>` : ''}</div></div>`).join('') +
+     (N && N.series ? `<div class="series neck"><div class="sname"><span class="role ok">Neck</span> ${escH(N.series.description || 'neck exam')}</div>
        <div class="why">${N.status === 'ok' ? 'Separate neck exam, lined up with the brain scan by matching vertebrae.' : 'Separate neck exam; it could not be lined up reliably, so it is not shown.'}</div></div>` : '');
   document.querySelectorAll('#seriesPlain .use3d').forEach((b) => (b.onclick = () => useFor3D(b.dataset.uid)));
   // Technical details: the original score arithmetic, unchanged
   $('#seriesTech').innerHTML = (manifest.brainExtraction ? `<div class="small">Brain found with <b>${manifest.brainExtraction.method === 'synthstrip' ? 'SynthStrip (AI, on this computer)' : 'quick estimate'}</b>` +
        (manifest.volumesMl ? ` · brain tissue ≈ ${Math.round(manifest.volumesMl.brain_tissue).toLocaleString()} mL (rough)` : '') + `</div>` : '') +
      (manifest.phase2 ? `<div class="small">Structures labelled with <b>FastSurfer (AI, on this computer)</b> in ${Math.round(manifest.phase2.timing.total)} s</div>` : '') +
-     `<div class="small">Chosen: ${ch.nFiles} images · ${ch.voxel.filter(Boolean).join('×')} mm · ${ch.acquisition || '?'} · built in ${manifest.timing.total} s · picked by DICOM metadata score</div>` +
+     `<div class="small">Chosen: ${escH(ch.nFiles)} images · ${escH(ch.voxel.filter(Boolean).join('×'))} mm · ${escH(ch.acquisition || '?')} · built in ${escH(manifest.timing.total)} s · picked by DICOM metadata score</div>` +
      all.map((s) => `<div class="series ${s.uid === ch.uid ? 'chosen' : ''}">
-     <div class="sname">${s.uid === ch.uid ? '✓ ' : ''}${s.description || '(no description)'} <span class="muted">· ${s.nFiles} img · score ${s.score > -500 ? s.score : 'excluded'}</span></div>
-     <div class="why">${s.excluded ? 'Excluded: ' + s.excluded : (s.uid === ch.uid ? s.reasons : [...s.reasons].sort((a, b) => (a[0] === '-') ? -1 : (b[0] === '-') ? 1 : 0)).slice(0, 4).join(', ')}</div></div>`).join('');
+     <div class="sname">${s.uid === ch.uid ? '✓ ' : ''}${escH(s.description || '(no description)')} <span class="muted">· ${escH(s.nFiles)} img · score ${escH(s.score > -500 ? s.score : 'excluded')}</span></div>
+     <div class="why">${escH(s.excluded ? 'Excluded: ' + s.excluded : (s.uid === ch.uid ? s.reasons : [...s.reasons].sort((a, b) => (a[0] === '-') ? -1 : (b[0] === '-') ? 1 : 0)).slice(0, 4).join(', '))}</div></div>`).join('');
 }
 async function useFor3D(uid) {
   const s = manifest.series.all.find((x) => x.uid === uid);
@@ -1062,7 +1063,7 @@ async function addScan(cid) {
   busy.remove();
   if (j.error) return toast(j.error, 'err', 9000);
   if (!j.folder) return;
-  if (j.route === 'neck') { toast(`Adding “${j.neck}” as the neck exam…`); return pollNeck(); }
+  if (j.route === 'neck') { toast(`Adding “${escH(j.neck)}” as the neck exam…`); return pollNeck(); }
   toast(j.route === 'both' ? `Found a head scan and a neck scan. Building your 3D model first, then the neck…` : 'Building your 3D model…');
   firstBuild = true; pollProcessing();
   if (j.route === 'both') setTimeout(function waitNeck() { fetch('api/state').then((r) => r.json()).then((s) => (s.neck.status === 'running' ? pollNeck() : s.status === 'running' || s.phase2.status === 'running' ? setTimeout(waitNeck, 3000) : null)); }, 3000);

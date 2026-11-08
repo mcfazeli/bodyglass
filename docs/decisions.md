@@ -2,6 +2,13 @@
 
 Short log of decisions that shape BodyGlass. Newest first. Add an entry in the PR that makes or changes one.
 
+## 2026-11 DICOM series metadata renders as text
+The scan summary, plain-language series list, technical details and neck-add notification escape
+DICOM-derived strings before building HTML. Series identifiers are also escaped in quoted attributes,
+while the rebuild callback receives the original identifier through the browser's decoded dataset.
+Descriptions, exclusion reasons and technical metadata remain readable text, never page markup.
+This uses the existing HTML-escaping helper and adds no dependencies or runtime network calls.
+
 ## 2026-11 CI privacy guard blocks scans, meshes, weights and secrets
 A `privacy-guard` CI job checks every tracked file against the Privacy, Model weights and Secrets sections of
 `.gitignore` (read from the file, so the lists can't drift; names compared ignoring case, as on macOS) and against DICOM, gzip and NIfTI headers, because
