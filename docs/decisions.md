@@ -2,6 +2,15 @@
 
 Short log of decisions that shape BodyGlass. Newest first. Add an entry in the PR that makes or changes one.
 
+## 2026-11 Verify cached AI model sources before reuse
+Every model file encountered during download or resume is checked against the selected pinned manifest,
+even when it already exists. LFS files use SHA-256; small non-LFS files use the Git blob hash. A mismatch
+stops setup, removes the rejected file and leaves the model unavailable; the user can retry to download
+that file from the pinned revision. Valid cached files still avoid a download. This applies to original
+MLX sources, community prebuilt files and GGUF files before conversion or marking setup ready.
+This does not revalidate already-installed models on every inference or authenticate locally converted
+MLX output. It adds no dependencies or network requests beyond the existing user-started download flow.
+
 ## 2026-11 CI privacy guard blocks scans, meshes, weights and secrets
 A `privacy-guard` CI job checks every tracked file against the Privacy, Model weights and Secrets sections of
 `.gitignore` (read from the file, so the lists can't drift; names compared ignoring case, as on macOS) and against DICOM, gzip and NIfTI headers, because
