@@ -81,14 +81,30 @@ fetch https://surfer.nmr.mgh.harvard.edu/docs/synthstrip/requirements/synthstrip
 
 # --- FastSurfer v2.6.0 (Apache-2.0), segmentation only: code 16 MB + weights 3 x 22 MB
 FS=third_party/FastSurfer
-if [ ! -f "$FS/FastSurferCNN/run_prediction.py" ]; then
-  echo "Downloading FastSurfer v2.6.0 code (16 MB)..."
-  mkdir -p third_party
-  curl -L --fail --retry 3 -# -o third_party/fastsurfer.tgz https://github.com/Deep-MI/FastSurfer/archive/refs/tags/v2.6.0.tar.gz || die "FastSurfer download failed."
-  rm -rf third_party/FastSurfer-2.6.0
-  tar xzf third_party/fastsurfer.tgz -C third_party && rm third_party/fastsurfer.tgz
-  mkdir -p "$FS/checkpoints"; cp -n "$FS"/checkpoints/*.pkl third_party/FastSurfer-2.6.0/checkpoints/ 2>/dev/null || true
-  rm -rf "$FS" && mv third_party/FastSurfer-2.6.0 "$FS"
+# v2.6.0 resolved to this commit. Verify the archive before extracting or executing code.
+# GitHub may regenerate archive bytes: a changed digest must fail closed until reviewed.
+FS_COMMIT=1dc024735371f65bc4b94a272cf596be6ddf4f21
+FS_SHA256=5276fd50636f50d71bf2b5d1d0057b5a8697d5fc290f1a3c81fe7e1b85908613
+# Old installs have no marker and must be replaced, even if run_prediction.py exists.
+# This marker records verified installation, not protection against later local edits.
+if [ ! -f "$FS/FastSurferCNN/run_prediction.py" ] ||
+   [ "$(cat "$FS/.bodyglass-archive-sha256" 2>/dev/null || true)" != "$FS_SHA256" ]; then
+  (
+    echo "Installing verified FastSurfer v2.6.0 code (16 MB)..."
+    mkdir -p third_party
+    fetch "https://github.com/Deep-MI/FastSurfer/archive/$FS_COMMIT.tar.gz" third_party/fastsurfer.tgz "$FS_SHA256"
+    FS_STAGE=$(mktemp -d third_party/.fastsurfer.XXXXXX)
+    trap 'rm -rf "$FS_STAGE"' EXIT
+    tar xzf third_party/fastsurfer.tgz -C "$FS_STAGE"
+    FS_NEW="$FS_STAGE/FastSurfer-$FS_COMMIT"
+    [ -f "$FS_NEW/FastSurferCNN/run_prediction.py" ] || die "FastSurfer archive is missing run_prediction.py."
+    mkdir -p "$FS_NEW/checkpoints"
+    cp -n "$FS"/checkpoints/*.pkl "$FS_NEW/checkpoints/" 2>/dev/null || true
+    rm -rf "$FS"
+    mv "$FS_NEW" "$FS"
+    printf '%s\n' "$FS_SHA256" > "$FS/.bodyglass-archive-sha256"
+    rm -f third_party/fastsurfer.tgz
+  )
 fi
 mkdir -p "$FS/checkpoints"
 while read -r SHA NAME; do
