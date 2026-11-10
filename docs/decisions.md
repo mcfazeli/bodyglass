@@ -19,6 +19,13 @@ fresh staging directory before replacing installed code. The marker records inst
 local-file integrity. If GitHub regenerates the archive, setup fails closed: review the upstream commit and archive
 before deliberately updating the digest. Do not bypass the check or automatically trust a new digest.
 
+## 2026-11 DICOM series metadata renders as text
+The scan summary, plain-language series list, technical details and neck-add notification escape
+DICOM-derived strings before building HTML. Series identifiers are also escaped in quoted attributes,
+while the rebuild callback receives the original identifier through the browser's decoded dataset.
+Descriptions, exclusion reasons and technical metadata remain readable text, never page markup.
+This uses the existing HTML-escaping helper and adds no dependencies or runtime network calls.
+
 ## 2026-11 AI conversations and attachments belong to one case
 Changing or closing a case clears the active conversation, drafts, attachments and preview, and stops its answer.
 Each request saves only to its original case and conversation. Late stream, file and model-loading callbacks are
