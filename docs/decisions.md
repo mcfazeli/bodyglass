@@ -2,6 +2,14 @@
 
 Short log of decisions that shape BodyGlass. Newest first. Add an entry in the PR that makes or changes one.
 
+## 2026-11 FastSurfer code is commit-pinned and verified before extraction
+The installer fetches FastSurfer v2.6.0 by its resolved commit and checks a committed SHA-256 digest before
+extracting it. Existing installs without the verification marker are replaced on the next setup run; checkpoints
+are preserved and still checked by the existing weight-download loop. Extraction and layout checks happen in a
+fresh staging directory before replacing installed code. The marker records installation provenance, not ongoing
+local-file integrity. If GitHub regenerates the archive, setup fails closed: review the upstream commit and archive
+before deliberately updating the digest. Do not bypass the check or automatically trust a new digest.
+
 ## 2026-11 DICOM series metadata renders as text
 The scan summary, plain-language series list, technical details and neck-add notification escape
 DICOM-derived strings before building HTML. Series identifiers are also escaped in quoted attributes,
