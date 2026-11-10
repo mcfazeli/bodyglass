@@ -11,6 +11,14 @@ MLX sources, community prebuilt files and GGUF files before conversion or markin
 This does not revalidate already-installed models on every inference or authenticate locally converted
 MLX output. It adds no dependencies or network requests beyond the existing user-started download flow.
 
+## 2026-11 FastSurfer code is commit-pinned and verified before extraction
+The installer fetches FastSurfer v2.6.0 by its resolved commit and checks a committed SHA-256 digest before
+extracting it. Existing installs without the verification marker are replaced on the next setup run; checkpoints
+are preserved and still checked by the existing weight-download loop. Extraction and layout checks happen in a
+fresh staging directory before replacing installed code. The marker records installation provenance, not ongoing
+local-file integrity. If GitHub regenerates the archive, setup fails closed: review the upstream commit and archive
+before deliberately updating the digest. Do not bypass the check or automatically trust a new digest.
+
 ## 2026-11 AI conversations and attachments belong to one case
 Changing or closing a case clears the active conversation, drafts, attachments and preview, and stops its answer.
 Each request saves only to its original case and conversation. Late stream, file and model-loading callbacks are
