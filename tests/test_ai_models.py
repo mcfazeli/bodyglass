@@ -175,3 +175,117 @@ def _until(cond):
 def test_download_errors_are_in_plain_words():
     assert "internet" in am.friendly("<urlopen error [Errno -2] Name or service not known>")
     assert "Free some space" in am.friendly("[Errno 28] No space left on device")
+
+
+def _cached_model(tmp_path, kind, files):
+    """Tiny synthetic cache in each supported download/conversion layout."""
+    man = _manifest(files)
+    model = man["models"][0]
+    variant, folder = "4", "original"
+    if kind == "gguf":
+        model["runtime"] = "llama_cpp"
+        folder = "gguf"
+    elif kind == "prebuilt":
+        model["prebuilt"] = {"repo": "o/Community", "revision": "community-pin", "files": files}
+        variant, folder = "prebuilt", "community-4bit"
+    src = tmp_path / "m" / folder
+    src.mkdir(parents=True)
+    mgr = am.Manager(str(tmp_path), man)
+    return mgr, variant, src
+
+
+@pytest.mark.parametrize("kind", ["mlx", "gguf", "prebuilt"])
+@pytest.mark.parametrize("lfs", [True, False])
+def test_cached_files_are_verified_before_conversion_or_ready(tmp_path, monkeypatch, kind, lfs):
+    name = "model.gguf" if kind == "gguf" else ("model.safetensors" if lfs else "config.json")
+    expected = b"original"
+    mgr, variant, src = _cached_model(tmp_path, kind, [_f(name, expected, lfs=lfs)])
+    cached = src / name
+    cached.write_bytes(b"tampered")  # Same size: checking existence or length is not enough.
+    downloads, conversions = [], []
+    monkeypatch.setattr(am, "fetch", lambda *args: downloads.append(args))
+    monkeypatch.setattr(am, "convert", lambda *args: conversions.append(args))
+    assert mgr.start("m", variant)
+    st = _wait(mgr)
+    assert st["status"] == "error" and "checksum" in st["error"], st
+    assert not cached.exists()
+    assert mgr.installed("m") is None
+    assert downloads == [] and conversions == []
+
+
+@pytest.mark.parametrize("kind", ["mlx", "gguf", "prebuilt"])
+def test_valid_cached_files_are_reused_without_download(tmp_path, monkeypatch, kind):
+    name = "model.gguf" if kind == "gguf" else "model.safetensors"
+    data = b"synthetic model"
+    files = [_f(name, data), _f("config.json", b"{}", lfs=False)]
+    mgr, variant, src = _cached_model(tmp_path, kind, files)
+    (src / name).write_bytes(data)
+    (src / "config.json").write_bytes(b"{}")
+    downloads, conversions, verified = [], [], []
+    check = am.file_ok
+
+    def verify(path, meta):
+        verified.append(meta["path"])
+        return check(path, meta)
+
+    def convert(runtime, source, out, bits):
+        assert verified == [name, "config.json"]
+        conversions.append(bits)
+        os.makedirs(out)
+
+    monkeypatch.setattr(am, "file_ok", verify)
+    monkeypatch.setattr(am, "fetch", lambda *args: downloads.append(args))
+    monkeypatch.setattr(am, "convert", convert)
+    assert mgr.start("m", variant)
+    st = _wait(mgr)
+    assert st["status"] == "ready", st
+    assert verified == [name, "config.json"]
+    assert downloads == [] and conversions == ([4] if kind == "mlx" else [])
+    assert mgr.installed("m") is not None
+    assert st["revision"] == ("community-pin" if kind == "prebuilt" else "abc")
+
+
+def test_restart_rejects_stale_cache_then_retry_downloads_current_pin(tmp_path, monkeypatch):
+    data = b"new model bytes"
+    files = [_f("model.gguf", data)]
+    mgr, variant, src = _cached_model(tmp_path, "gguf", files)
+    (src / "model.gguf").write_bytes(b"previous revision")
+    mgr._set("m", status="downloading", variant=variant, revision="old-pin")
+    # Recreate the manager just as server startup does before resuming an interrupted job.
+    mgr = am.Manager(str(tmp_path), mgr.manifest())
+    mgr.resume_unfinished()
+    st = _wait(mgr)
+    assert st["status"] == "error" and "checksum" in st["error"], st
+    assert mgr.installed("m") is None
+    urls = []
+    monkeypatch.setattr(am, "hf_url", lambda repo, p, rev: f"https://huggingface.co/{repo}/resolve/{rev}/{p}")
+    real_fetch = am.fetch
+
+    def download(url, dest, size, stop, tick):
+        urls.append(url)
+        return real_fetch(url, dest, size, stop, tick, FakeOpener({"model.gguf": data}))
+
+    monkeypatch.setattr(am, "fetch", download)
+    assert mgr.start("m", variant)
+    assert _wait(mgr)["status"] == "ready"
+    assert urls == ["https://huggingface.co/o/M/resolve/abc/model.gguf"]
+    assert am.file_ok(mgr.installed("m"), files[0])
+
+
+def test_later_corrupt_cached_file_blocks_conversion_after_download(tmp_path, monkeypatch):
+    files = [_f("model.safetensors", b"new weights"), _f("config.json", b"{}", lfs=False)]
+    mgr, variant, src = _cached_model(tmp_path, "mlx", files)
+    (src / "config.json").write_bytes(b"[]")
+    monkeypatch.setattr(am, "hf_url", lambda repo, p, rev: f"https://huggingface.co/{p}")
+    real_fetch = am.fetch
+    op = FakeOpener({"model.safetensors": b"new weights"})
+    monkeypatch.setattr(am, "fetch", lambda url, dest, size, stop, tick: real_fetch(url, dest, size, stop, tick, op))
+    conversions = []
+    monkeypatch.setattr(am, "convert", lambda *args: conversions.append(args))
+    assert mgr.start("m", variant)
+    st = _wait(mgr)
+    assert st["status"] == "error" and "config.json" in st["error"] and "checksum" in st["error"]
+    assert op.ranges == [None] and conversions == []
+    assert am.file_ok(src / "model.safetensors", files[0])
+    assert not (src / "config.json").exists()
+    assert mgr.installed("m") is None

@@ -2,6 +2,15 @@
 
 Short log of decisions that shape BodyGlass. Newest first. Add an entry in the PR that makes or changes one.
 
+## 2026-11 Verify cached AI model sources before reuse
+Every model file encountered during download or resume is checked against the selected pinned manifest,
+even when it already exists. LFS files use SHA-256; small non-LFS files use the Git blob hash. A mismatch
+stops setup, removes the rejected file and leaves the model unavailable; the user can retry to download
+that file from the pinned revision. Valid cached files still avoid a download. This applies to original
+MLX sources, community prebuilt files and GGUF files before conversion or marking setup ready.
+This does not revalidate already-installed models on every inference or authenticate locally converted
+MLX output. It adds no dependencies or network requests beyond the existing user-started download flow.
+
 ## 2026-11 FastSurfer code is commit-pinned and verified before extraction
 The installer fetches FastSurfer v2.6.0 by its resolved commit and checks a committed SHA-256 digest before
 extracting it. Existing installs without the verification marker are replaced on the next setup run; checkpoints

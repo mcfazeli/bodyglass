@@ -247,16 +247,18 @@ class Manager:
             self._set(mid, total=total, done=done, t0=time.time(), done0=done)
             for f in files:
                 dest = os.path.join(src, f["path"])
-                if os.path.exists(dest):
-                    continue
-                os.makedirs(os.path.dirname(dest), exist_ok=True)
-                self._set(mid, msg=f"Downloading {f['path']}")
+                if not os.path.exists(dest):
+                    os.makedirs(os.path.dirname(dest), exist_ok=True)
+                    self._set(mid, msg=f"Downloading {f['path']}")
 
-                def tick(n):
-                    self.state[mid]["done"] = self.state[mid].get("done", 0) + n
-                if not fetch(hf_url(src_repo["repo"], f["path"], src_repo["revision"]), dest, f["size"], stop.is_set, tick):
-                    self._set(mid, status="paused", msg="Paused")
-                    return
+                    def tick(n):
+                        self.state[mid]["done"] = self.state[mid].get("done", 0) + n
+                    if not fetch(hf_url(src_repo["repo"], f["path"], src_repo["revision"]), dest, f["size"], stop.is_set, tick):
+                        self._set(mid, status="paused", msg="Paused")
+                        return
+                # Existing files may be corrupt or left over from an older pin. Treat
+                # cached and downloaded bytes alike before conversion or readiness.
+                self._set(mid, msg=f"Checking {f['path']}")
                 if not file_ok(dest, f):
                     os.remove(dest)
                     raise OSError(f"{f['path']} does not match the Hub's checksum; refused and deleted")
