@@ -12,6 +12,8 @@ Thanks for your interest in BodyGlass. Issues and pull requests are welcome.
   whether a scan or measurement is normal or abnormal.
 - **Keep it local.** No new runtime network calls, analytics or CDNs. Downloads happen only when the user starts
   them, and the page's Content Security Policy stays `'self'`.
+- **DICOM-derived or error text going into HTML must go through `escH()`** in `app.js` (this includes `toast()`,
+  which shows HTML). `tests/test_html_sinks.py` fails on any un-escaped value in an HTML sink.
 - Keep changes small, follow the existing structure, and avoid new dependencies unless they clearly pay off.
 
 ## Sample data and privacy

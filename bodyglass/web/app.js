@@ -568,7 +568,7 @@ async function useFor3D(uid) {
   const s = manifest.series.all.find((x) => x.uid === uid);
   if (!confirm(`Build a new 3D model from “${s.description}”?\nThe current model stays in My body.`)) return;
   const r = await fetch('api/rebuild', { method: 'POST', body: JSON.stringify({ caseId: currentCase, seriesUid: uid }) }).then((x) => x.json());
-  if (r.error) return toast(r.error, 'err');
+  if (r.error) return toast(escH(r.error), 'err');
   toast('Building a new 3D model…'); pollProcessing();
 }
 // models built before the mouth fix: offer the quick skin-only rebuild once (nothing else is redone)
@@ -582,7 +582,7 @@ function offerReskin() {
     t.remove(); const busy = toast('Updating the skin surface…', '', 60000);
     const r = await fetch('api/reskin', { method: 'POST', body: JSON.stringify({ caseId: currentCase }) }).then((x) => x.json()).catch(() => ({ error: 'BodyGlass is not running' }));
     busy.remove();
-    if (r.error) return toast(r.error, 'err');
+    if (r.error) return toast(escH(r.error), 'err');
     await loadCase(currentCase, true); toast('Skin updated: the mouth area is closed');
   };
 }
@@ -929,7 +929,7 @@ function openExport() {
   const sel = selected && selected.items[0] && selected.items[0].st ? selected.items[0].st : null;
   const ch = exportChoices();
   $('#expList').innerHTML = (sel ? `<label class="check"><input type="radio" name="expwhat" value="sel" checked> Only the selected structure: <b>${sel.name}</b></label><label class="check"><input type="radio" name="expwhat" value="layers"> These layers:</label>` : '') +
-    `<div id="expLayers" class="${sel ? 'indent' : ''}">` + ch.map((c) => `<label class="check"><input type="checkbox" value="${c.id}" ${c.on ? 'checked' : ''}> ${c.name}</label>`).join('') + '</div>';
+    `<div id="expLayers" class="${sel ? 'indent' : ''}">` + ch.map((c) => `<label class="check"><input type="checkbox" value="${escH(c.id)}" ${c.on ? 'checked' : ''}> ${escH(c.name)}</label>`).join('') + '</div>';
   $('#expMsg').textContent = ''; $('#expGo').disabled = false; $('#export').classList.remove('hidden');
 }
 async function doExport() {
@@ -1058,7 +1058,7 @@ function showNeckCard() {
 }
 async function addNeck(cid = currentCase) {   // library → neck exam → "Replace with another folder"
   const j = await (await fetch('api/neck', { method: 'POST', body: JSON.stringify({ caseId: cid }) })).json();
-  if (j.error) return toast(j.error, 'err');
+  if (j.error) return toast(escH(j.error), 'err');
   if (j.folder) { closeLibrary(); toast('Adding the neck exam…'); pollNeck(); }
 }
 async function pollNeck() {
@@ -1066,7 +1066,7 @@ async function pollNeck() {
   if (N.status === 'running') { liveStatus('neck', `Neck exam: ${N.msg}… ${Math.round(N.pct)}%`); setTimeout(pollNeck, 1500); return; }
   liveStatus('neck');
   if (N.status === 'done' && N.caseId === currentCase) { await loadCase(currentCase, true); showNeckCard(); toast(manifest.neck && manifest.neck.status === 'ok' ? '✓ Neck added and lined up' : 'The neck exam could not be lined up (see the card)'); }
-  else if (N.status === 'error') toast(`${N.msg} (${N.error})`, 'err', 9000);
+  else if (N.status === 'error') toast(`${escH(N.msg)} (${escH(N.error)})`, 'err', 9000);
 }
 
 // ---------- Add scan (sorted automatically) and the "My body" library
@@ -1075,7 +1075,7 @@ async function addScan(cid) {
   const busy = toast('Choose a folder in the window that opened…', '', 120000);
   const j = await fetch('api/add', { method: 'POST', body: JSON.stringify({ caseId: cid }) }).then((r) => r.json()).catch(() => ({ error: 'BodyGlass is not running' }));
   busy.remove();
-  if (j.error) return toast(j.error, 'err', 9000);
+  if (j.error) return toast(escH(j.error), 'err', 9000);
   if (!j.folder) return;
   if (j.route === 'neck') { toast(`Adding “${escH(j.neck)}” as the neck exam…`); return pollNeck(); }
   toast(j.route === 'both' ? `Found a head scan and a neck scan. Building your 3D model first, then the neck…` : 'Building your 3D model…');
@@ -1101,10 +1101,10 @@ async function openLibrary() {
   $('#libList').innerHTML = cases.length ? '' : '<p class="muted">No saved models yet. Use ＋ Add scan.</p>';
   for (const c of cases.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))) {
     const el = document.createElement('div'); el.className = 'libcard' + (c.caseId === currentCase ? ' open' : '');
-    el.innerHTML = `<div class="librow"><input class="libname" value="${(c.name || '').replace(/"/g, '&quot;')}" placeholder="${c.caseId === currentCase ? 'Me' : 'Unnamed'} (click to rename)" maxlength="80">
+    el.innerHTML = `<div class="librow"><input class="libname" value="${escH(c.name || '')}" placeholder="${c.caseId === currentCase ? 'Me' : 'Unnamed'} (click to rename)" maxlength="80">
         <span class="libbtns">${c.caseId === currentCase ? '<button class="ghost libClose" title="Close this model">✕ Close</button>' : '<button class="libOpen">Open</button>'}
         ${st.mac ? '<button class="ghost libFinder" title="Show the saved model in Finder">Show in Finder</button>' : ''}<button class="ghost libDel" title="Delete this 3D model">Delete</button></span></div>
-      ${c.exams.map((e) => `<div class="libexam"><span class="role ${e.ok === false ? 'off' : 'ok'}">${e.kind}</span> ${e.description || ''} <span class="muted">${fmtDate(e.date) || ''}</span>
+      ${c.exams.map((e) => `<div class="libexam"><span class="role ${e.ok === false ? 'off' : 'ok'}">${escH(e.kind)}</span> ${escH(e.description || '')} <span class="muted">${fmtDate(e.date) || ''}</span>
         ${e.kind === 'Neck MRI' && c.caseId === currentCase && neckAvail ? '<button class="link libNeck">Replace with another folder…</button>' : ''}</div>`).join('')}
       ${!c.exams.some((e) => e.kind === 'Neck MRI') && c.caseId === currentCase && c.structures ? '<div class="libexam muted">No neck exam yet: use ＋ Add scan with a neck MRI folder.</div>' : ''}
       <div class="small muted">Saved ${c.createdAt ? new Date(c.createdAt).toLocaleString() : ''}</div>`;
@@ -1116,7 +1116,7 @@ async function openLibrary() {
     el.querySelector('.libNeck')?.addEventListener('click', () => addNeck(c.caseId));
     el.querySelector('.libDel').onclick = async () => {
       if (!confirm(`Delete the 3D model “${c.name || c.description}”?\nYour scan folder is not touched; you can rebuild it with ＋ Add scan.`)) return;
-      const r = await post('api/case/delete'); if (r.error) return toast(r.error, 'err');
+      const r = await post('api/case/delete'); if (r.error) return toast(escH(r.error), 'err');
       if (c.caseId === currentCase) closeCase();
       toast('Deleted'); openLibrary();
     };
@@ -1195,7 +1195,7 @@ const live = {};
 function liveStatus(key, text) {
   if (!text) { if (live[key]) { live[key].remove(); delete live[key]; } return; }
   if (!live[key]) { live[key] = document.createElement('div'); live[key].className = 'toast glass live'; $('#toasts').append(live[key]); }
-  live[key].innerHTML = text;
+  live[key].textContent = text;
 }
 
 // ---------- Tools menu, modals, collapsible panel sections
@@ -1323,7 +1323,7 @@ function selectStruct(id, point) {
   const total = manifest.structures.filter(inBrain).reduce((a, o) => a + (o.volume_ml || 0), 0);
   $('#infoExtra').innerHTML = `<span class="vol"><b>${fmtMl(st.volume_ml)} mL</b> ${gm ? 'grey matter' : 'volume'}` +
     (pair ? ` · other side ${fmtMl(pair.volume_ml)} mL` : '') + (total > 0 && inBrain(st) ? ` · ${(100 * st.volume_ml / total).toFixed(st.volume_ml / total < 0.01 ? 2 : 1)} % of the labelled brain` : '') +
-    `</span><br>Computer estimate from the labels (1 mL = 1 cm³); healthy sizes vary a lot between people` + (st.group === 'spine' ? `.<br>${neckText()}` : ', and small left–right differences are normal.');
+    `</span><br>Computer estimate from the labels (1 mL = 1 cm³); healthy sizes vary a lot between people` + (st.group === 'spine' ? `.<br>${escH(neckText())}` : ', and small left–right differences are normal.');
   const p = gm ? parcelAt(point) : null;
   $('#infoParcel').innerHTML = p ? `<b>Under the pointer:</b> ${p.name}. ${p.text}` : (gm ? '<span class="muted">Click on the surface to name the fold (gyrus) under the pointer.</span>' : '');
   $('#infoIsolate').classList.remove('hidden');
@@ -1524,7 +1524,7 @@ function buildStructUI() {
       const sts = manifest.structures.filter((s) => s.key === key);
       const row = document.createElement('div'); row.className = 'srow'; row.dataset.key = key;
       const nm = sts[0].hemi ? sts[0].name.replace(/^(Left|Right) /, '') : sts[0].name;
-      row.innerHTML = `<input type="checkbox" checked><span class="dot" style="background:${sts[0].color}"></span><span class="sname">${nm[0].toUpperCase() + nm.slice(1)}</span><span class="hemi">${sts.filter((s) => s.hemi).map((s) => `<b data-id="${s.id}" title="${s.name}">${s.hemi}</b>`).join('')}</span>`;
+      row.innerHTML = `<input type="checkbox" checked><span class="dot" style="background:${sts[0].color}"></span><span class="sname">${nm[0].toUpperCase() + nm.slice(1)}</span><span class="hemi">${sts.filter((s) => s.hemi).map((s) => `<b data-id="${s.id}" title="${escH(s.name)}">${escH(s.hemi)}</b>`).join('')}</span>`;
       row.querySelector('input').onchange = (e) => { for (const s of sts) s.visible = e.target.checked; applyOpacity(layers['g:' + gid]); };
       row.querySelector('.sname').onclick = () => selectStruct(sts[0].id);
       row.querySelectorAll('.hemi b').forEach((b) => (b.onclick = () => selectStruct(b.dataset.id)));
@@ -1701,7 +1701,7 @@ async function pollPhase2() {
   if (P.status === 'running') { liveStatus('p2', `Adding detailed structures on this computer… ${Math.round(P.pct)}%`); setTimeout(pollPhase2, 2000); return; }
   liveStatus('p2');
   if (P.status === 'done' && currentCase && !hasStructs()) { await loadCase(currentCase, true); toast('✓ Detailed structures ready'); }
-  else if (P.status === 'error') toast(P.msg || 'Adding the detailed structures failed; the basic model still works', 'err', 9000);
+  else if (P.status === 'error') toast(escH(P.msg || 'Adding the detailed structures failed; the basic model still works'), 'err', 9000);
 }
 async function pollProcessing() {
   const s = await (await fetch('api/state')).json();
@@ -1713,7 +1713,7 @@ async function pollProcessing() {
     if (firstBuild && fresh) { firstBuild = false; toast('✓ Your 3D model is ready. Detailed structures follow in the background.'); maybeAutoTour(); }
     if (!hasStructs()) pollPhase2();
   }
-  else if (s.status === 'error' && firstBuild) { firstBuild = false; setLoading(false); toast(s.error, 'err', 10000); if (!manifest) showWelcome(); }
+  else if (s.status === 'error' && firstBuild) { firstBuild = false; setLoading(false); toast(escH(s.error), 'err', 10000); if (!manifest) showWelcome(); }
   return s;
 }
 let firstBuild = false;
@@ -1882,7 +1882,7 @@ function renderWelcome() {
   $('#tcMsg').innerHTML = cg.pending ? '<span class="muted">Finish signing in in your browser…</span>' : cg.signedIn && !cg.sharing ? '<span class="err">You signed in but didn\'t allow BodyGlass to use your plan. Sign in again and allow it.</span>' : cg.error && ai.cgTried ? `<span class="err">${escH(cg.error.startsWith('Keychain') ? 'BodyGlass could not use the macOS Keychain to keep your sign-in. ' + cg.error : cg.error)}</span>` : '';
   $('#btnCgIn').textContent = cg.pending ? 'Waiting for the browser…' : 'Sign in with ChatGPT';
 }
-async function cgSignIn() { ai.cgTried = true; const r = await postJ('api/ai/signin'); if (r.error) toast(r.error, 'err'); LS.set('aiModel', 'chatgpt'); await aiLoad(); aiRender(); }
+async function cgSignIn() { ai.cgTried = true; const r = await postJ('api/ai/signin'); if (r.error) toast(escH(r.error), 'err'); LS.set('aiModel', 'chatgpt'); await aiLoad(); aiRender(); }
 $('#btnCgIn').onclick = cgSignIn;
 $('#cgOk').onclick = () => { LS.set('cgConsent', '1'); aiRender(); $('#chatQ').focus(); };
 $('#cgNo').onclick = () => { LS.set('aiModel', localReady().length ? 'local:' + localReady()[0].id : ''); aiRender(); if (!localReady().length) { $('#aiWelcome').classList.remove('hidden'); renderWelcome(); } };
@@ -1998,8 +1998,8 @@ const FIX = { setup: 'Set up the private model', image_model: 'Add the picture-r
 function msgEl(m, live) {
   const el = document.createElement('div'); el.className = 'msg ' + (m.role === 'user' ? 'u' : 'a') + (m.error ? ' err' : '');
   if (m.role === 'user') {
-    el.innerHTML = escH(m.text) + (m.ctx ? `<span class="ctx">${escH(m.ctx)}</span>` : '') + (m.thumb ? `<img class="thumb" src="${m.thumb}" alt="">` : '') +
-      (m.mentions && m.mentions.length ? `<span class="ctx">In your report: ${m.mentions.map(([ids, w]) => `<a class="part" data-ids="${ids}">${escH(w)}</a>`).join(', ')}</span>` : '');
+    el.innerHTML = escH(m.text) + (m.ctx ? `<span class="ctx">${escH(m.ctx)}</span>` : '') + (m.thumb ? `<img class="thumb" src="${escH(m.thumb)}" alt="">` : '') +
+      (m.mentions && m.mentions.length ? `<span class="ctx">In your report: ${m.mentions.map(([ids, w]) => `<a class="part" data-ids="${escH(ids)}">${escH(w)}</a>`).join(', ')}</span>` : '');
     return el;
   }
   if (m.error) { el.innerHTML = `${escH(m.text)}${m.fix && FIX[m.fix] ? `<div class="fix"><button class="small">${FIX[m.fix]}</button></div>` : ''}`; el.querySelector('.fix button')?.addEventListener('click', () => runFix(m.fix)); return el; }
@@ -2172,7 +2172,7 @@ async function openAiModels() {
       ${s.status === 'ready' ? `<div class="small"><span class="role ok">On this Mac</span> ${s.variant === 'prebuilt' ? 'community 4-bit copy' : m.runtime === 'llama_cpp' ? 'GGUF' : `${s.variant}-bit`}</div>` : ''}
       ${s.status === 'error' ? `<div class="small err">${escH(s.error || 'Failed')}</div>` : ''}<div class="mbtns"></div>`;
     const btns = el.querySelector('.mbtns'), add = (label, fn, ghost) => { const b = document.createElement('button'); b.textContent = label; b.className = ghost ? 'ghost small' : 'small'; b.onclick = fn; btns.appendChild(b); };
-    const act = async (p, body) => { const r = await postJ(p, { id: m.id, ...body }); if (r.error) toast(r.error, 'err'); openAiModels(); };
+    const act = async (p, body) => { const r = await postJ(p, { id: m.id, ...body }); if (r.error) toast(escH(r.error), 'err'); openAiModels(); };
     if (s.status === 'downloading') add('Pause', () => act('api/ai/models/pause'), true);
     else if (s.status === 'paused') add('Resume', () => act('api/ai/models/download', { variant: s.variant || '4' }));
     else if (s.status !== 'ready' && s.status !== 'converting') {

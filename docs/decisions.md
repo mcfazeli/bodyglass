@@ -2,6 +2,16 @@
 
 Short log of decisions that shape BodyGlass. Newest first. Add an entry in the PR that makes or changes one.
 
+## 2026-11 Text from scans and errors is escaped in every HTML sink, checked in CI
+DICOM-derived text (series descriptions, exam kinds, transfer-syntax names), server error messages and exception
+text are escaped with `escH()` wherever `app.js` writes them into HTML: the My body library card, the structure
+info panel's neck note, export choices, structure rows, and every `toast()` that shows an error. `toast()` keeps
+accepting markup for the few messages that contain a button; the background-job progress line now uses plain text.
+`tests/test_html_sinks.py` reads `app.js` and fails, with line numbers, on any `${...}` or bare value written to
+`innerHTML`, `insertAdjacentHTML` or `toast()` that is neither escaped nor on a short commented list of safe sites
+(built-in tables, numbers app.js formats). Escaping happens in the page, not on the server, so the API keeps
+returning plain text. No dependencies or network calls are added.
+
 ## 2026-11 Verify cached AI model sources before reuse
 Every model file encountered during download or resume is checked against the selected pinned manifest,
 even when it already exists. LFS files use SHA-256; small non-LFS files use the Git blob hash. A mismatch
