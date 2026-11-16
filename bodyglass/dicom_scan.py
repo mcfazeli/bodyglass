@@ -206,7 +206,8 @@ def scan_folder(root: str) -> list[Series]:
             s = series.setdefault(str(uid), Series(uid=str(uid)))
             s.files.append(path)
             if not s.meta:
-                s.meta = {t: _val(ds, t) for t in HEADER_TAGS} | {"unsupported": unsupported_syntax(ds)}
+                s.meta = {t: _val(ds, t) for t in HEADER_TAGS} | {"unsupported": None}
+            s.meta["unsupported"] = s.meta["unsupported"] or unsupported_syntax(ds)   # any file can differ
     for s in series.values():
         score_series(s)
     return sorted(series.values(), key=lambda s: -s.score)
