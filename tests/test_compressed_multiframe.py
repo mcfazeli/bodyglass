@@ -53,6 +53,8 @@ CASES = {
 def test_every_frame_decodes_and_matches_the_reference(case, tmp_path):
     uid, src, ref, lossless = CASES[case]
     path = src(tmp_path) if callable(src) else SAMPLES / src
+    if ref is None:   # CI installs GDCM (requirements-test.txt) and fails on skips; local runs may not have it
+        pytest.importorskip("gdcm", reason="GDCM reference decoder not installed: pip install -r requirements-test.txt")
     ds = pydicom.dcmread(path)
     assert ds.file_meta.TransferSyntaxUID == uid and unsupported_syntax(ds) is None
     px = pixel_array(path, decoding_plugin="pylibjpeg", raw=True).astype(np.int64)   # raw: colour stays YBR

@@ -4,8 +4,9 @@ import numpy as np
 import pydicom
 import pytest
 from pydicom.dataset import Dataset, FileMetaDataset
+from pydicom.encaps import encapsulate
 from pydicom.sequence import Sequence
-from pydicom.uid import ExplicitVRLittleEndian, generate_uid
+from pydicom.uid import UID, ExplicitVRLittleEndian, ImplicitVRLittleEndian, generate_uid
 
 from bodyglass import server
 from bodyglass.dicom_scan import pick_t1, scan_folder
@@ -119,3 +120,32 @@ def test_multiframe_without_positions_is_rejected_with_a_plain_message(tmp_path)
         load_series(s.files)
     reply, code = server.add_scan(str(tmp_path), str(tmp_path / "cases"))
     assert code == 400 and "multi-frame DICOM file BodyGlass can't read" in reply["error"]
+
+
+def _resave(path, syntax):
+    ds = pydicom.dcmread(path)
+    ds.file_meta.TransferSyntaxUID = UID(syntax)
+    if syntax == "1.2.840.10008.1.2.4.102":   # H.264 video: no still-image decoder reads it
+        ds.PixelData = encapsulate([b"\x00" * 8])
+        ds["PixelData"].VR = "OB"
+    ds.save_as(path, enforce_file_format=True)
+
+
+@pytest.mark.parametrize("which", [0, N // 2, N - 1])
+def test_classic_series_is_unsupported_if_any_file_cannot_be_decoded(tmp_path, which):
+    write_classic(tmp_path)
+    _resave(tmp_path / f"im{which:03d}.dcm", "1.2.840.10008.1.2.4.102")
+    (s,) = scan_folder(str(tmp_path))
+    assert len(s.files) == N and pick_t1([s]) is None
+    assert "MPEG-4 AVC/H.264" in s.excluded and "1.2.840.10008.1.2.4.102" in s.excluded
+    reply, code = server.add_scan(str(tmp_path), str(tmp_path / "cases"))
+    assert code == 400 and s.excluded in reply["error"]
+
+
+def test_classic_series_mixing_readable_syntaxes_stays_usable(tmp_path):
+    write_classic(tmp_path)
+    _resave(tmp_path / f"im{N // 2:03d}.dcm", ImplicitVRLittleEndian)
+    (s,) = scan_folder(str(tmp_path))
+    assert not s.meta["unsupported"] and not s.excluded
+    vol, _ = load_series(s.files)
+    assert vol.shape == (N, ROWS, COLS)
