@@ -85,7 +85,7 @@ On the 11-series test study: MPRAGE 126 points (picked) vs the "T1 SAG 3D_MPR_Ax
   click an inset to move the planes.
 * **Click-to-pick:** raycast picks a layer (or slice) and shows a card with a plain-language description,
   an "estimated" badge, a rough volume and the hemisphere.
-* Disclaimer bar, CSP `default-src 'self'` (the page cannot contact any other host), no telemetry.
+* Disclaimer bar, CSP `default-src 'self'` (the page cannot contact any other host) with `frame-ancestors 'none'` (no other site can frame it), no telemetry.
 
 ### Viewer: labelled structures
 * When structures are ready the viewer reloads them in place (the camera stays put). The top bar shows
