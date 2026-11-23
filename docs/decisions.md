@@ -2,6 +2,14 @@
 
 Short log of decisions that shape BodyGlass. Newest first. Add an entry in the PR that makes or changes one.
 
+## 2026-11 The local page refuses to be framed and only talks to its own server
+Every response from the local server, including errors, sends a CSP with `frame-ancestors 'none'`,
+`base-uri 'none'` and `form-action 'self'` on top of the existing `'self'`-only directives, plus
+`X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`. Another website open in the same
+browser therefore cannot load the viewer in a hidden frame and trick clicks onto library actions such as
+rename or delete. The Sign in with ChatGPT callback page sends `frame-ancestors 'none'` and the same two
+headers; its CSP is otherwise unchanged. Tests pin the full header set so a later edit cannot silently weaken it.
+
 ## 2026-11 Text from scans and errors is escaped in every HTML sink, checked in CI
 DICOM-derived text (series descriptions, exam kinds, transfer-syntax names), server error messages and exception
 text are escaped with `escH()` wherever `app.js` writes them into HTML: the My body library card, the structure

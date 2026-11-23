@@ -1,6 +1,7 @@
 """Sign in with ChatGPT against a mock authorization server + mock Responses API (no real account or token)."""
 import base64
 import hashlib
+import http.client
 import json
 import os
 import threading
@@ -239,3 +240,20 @@ def test_a_second_sign_in_attempt_replaces_the_first(env):
     time.sleep(2.5)   # the first listener times out without touching the new attempt
     assert second is not first and c.pending is second
     c.pending = None
+
+
+def test_callback_page_refuses_framing():
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), siwc._Callback)
+    srv.result = None
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        for path, code in (("/auth/callback?code=c&state=s", 200), ("/other", 404)):
+            c = http.client.HTTPConnection("127.0.0.1", srv.server_address[1], timeout=10)
+            c.request("GET", path)
+            r = c.getresponse()
+            r.read()
+            assert r.status == code
+            assert r.getheader("Content-Security-Policy") == "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'"
+            assert r.getheader("X-Content-Type-Options") == "nosniff" and r.getheader("Referrer-Policy") == "no-referrer"
+    finally:
+        srv.shutdown()
