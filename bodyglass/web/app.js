@@ -1700,7 +1700,7 @@ const caseGuard = () => { const version = caseVersion; return () => version === 
 // /api/state lists each case's stages (phase1, phase2, sequences, neck) separately; read only the case asked for
 const ACTIVE = ['queued', 'running'];
 const jobOf = (s, cid, kind) => ((s.jobs || {})[cid] || {})[kind] || {};
-const newestBuild = (s) => Object.values(s.jobs || {}).map((j) => j.phase1).filter((j) => j && ACTIVE.includes(j.status)).sort((a, b) => b.id - a.id)[0]?.caseId;
+const newestBuild = (s) => Object.values(s.jobs || {}).map((j) => j.phase1).filter((j) => j && [...ACTIVE, 'interrupted'].includes(j.status)).sort((a, b) => b.id - a.id)[0]?.caseId;   // interrupted ones are older: listed at start
 async function pollPhase2(cid = currentCase, isCurrent = caseGuard()) {   // stops when another case is opened
   const P = jobOf(await (await fetch('api/state')).json(), cid, 'phase2');
   if (!isCurrent()) return liveStatus('p2');
@@ -1723,7 +1723,8 @@ async function pollProcessing(cid) {   // the quick model of cid (on start: the 
     if (firstBuild && fresh) { firstBuild = false; toast('✓ Your 3D model is ready. Detailed structures follow in the background.'); maybeAutoTour(); }
     if (!hasStructs()) pollPhase2();
   }
-  else if ((J.status === 'error' || J.status === 'interrupted') && firstBuild) { firstBuild = false; setLoading(false); toast(escH(J.error || J.msg), 'err', 10000); if (!manifest) showWelcome(); }
+  else if (J.status === 'error' && firstBuild) { firstBuild = false; setLoading(false); toast(escH(J.error || J.msg), 'err', 10000); if (!manifest) showWelcome(); }
+  else if (J.status === 'interrupted') toast(escH(J.msg), 'err', 10000);   // e.g. the app was closed mid-build
   return J;
 }
 let firstBuild = false;

@@ -52,6 +52,9 @@ def test_neck_progress_of_another_case_is_not_shown():
 def test_start_follows_the_newest_build_and_an_interrupted_one_is_reported():
     jobs = {"A": {"phase1": dict(RUNNING(10), id=1, caseId="A")}, "B": {"phase1": dict(RUNNING(70), id=7, caseId="B", msg="newest")}}
     assert shown(jobs, "await pollProcessing()") == ["p1: ", "loading: newest"]
+    stop = "Stopped when BodyGlass was closed. Add the scan again to finish it."
+    jobs = {"A": {"phase1": dict(status="interrupted", id=1, caseId="A", msg=stop)}}
+    assert shown(jobs, "firstBuild = false; await pollProcessing()") == [stop, "p1: "]   # a quick model cut off by a quit
     jobs = {"A": {"phase2": {"status": "interrupted", "msg": "Stopped when BodyGlass was closed. Add the scan again to finish it."}}}
     assert shown(jobs, "currentCase = 'A'; hasStructs = () => false; await pollPhase2()") == [
         "Stopped when BodyGlass was closed. Add the scan again to finish it.", "p2: "]   # toast, then progress cleared
