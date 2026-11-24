@@ -6,7 +6,12 @@ import pytest
 from scipy import ndimage as ndi
 
 sitk = pytest.importorskip("SimpleITK")
-from bodyglass.sequences import register  # noqa: E402
+from bodyglass.sequences import register as _register  # noqa: E402
+
+
+def register(*a, **k):
+    """One thread: the multi-threaded metric sums in thread-finish order, so fits differ run to run (#13)."""
+    return _register(*a, threads=1, **k)
 
 
 def phantom():

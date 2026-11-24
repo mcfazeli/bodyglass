@@ -64,8 +64,11 @@ def _fixed_mask(v):
     return sitk.GetImageFromArray(m.astype(np.uint8))
 
 
-def register(fixed, moving, fmask=None, same_frame=True):
+def register(fixed, moving, fmask=None, same_frame=True, threads=None):
     """Rigid (6 dof) Mattes mutual-information registration. Returns (transform, info).
+
+    threads=1 makes the result repeatable (used by the tests). By default it uses every core, which is
+    faster, but the metric sums per-thread results in finish order, so a fit can differ by about a mm between runs.
 
     shortcut: rigid only; scans with patient motion between series or strong EPI distortion (DWI) keep
     a residual of a few mm. Add affine/B-spline only if overlays visibly drift."""
@@ -79,6 +82,9 @@ def register(fixed, moving, fmask=None, same_frame=True):
     if same_frame:   # scanner coordinates already agree: start from the header (identity), keep the centre
         init = sitk.Euler3DTransform(init.GetCenter(), 0, 0, 0, (0, 0, 0))
     R = sitk.ImageRegistrationMethod()
+    if threads:
+        R.SetNumberOfThreads(threads)
+        R.SetNumberOfWorkUnits(threads)
     R.SetMetricAsMattesMutualInformation(numberOfHistogramBins=50)
     R.SetMetricSamplingStrategy(R.RANDOM)
     R.SetMetricSamplingPercentage(0.25 if thick else 0.10, seed=7)

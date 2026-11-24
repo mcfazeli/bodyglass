@@ -60,12 +60,17 @@ WHERE = """(id) => { const B = window.__bv, S = B.structById[id]; B.centered.upd
   const c = new B.THREE.Box3().setFromObject(S.item.mesh).getCenter(new B.THREE.Vector3()).project(B.camera);
   return [(c.x + 1) / 2 * innerWidth, (1 - c.y) / 2 * innerHeight]; }"""
 DIST = "() => window.__bv.camera.position.distanceTo(window.__bv.controls.target)"
+# the camera glide is timed but only lands on a later frame, and a busy CPU can hold software-rendered frames back
+# for tens of seconds: wait for the glide to finish, with room to spare (#13)
+GLIDE_DONE = "() => !window.__bv.gliding()"
+GLIDE_WAIT = 180_000
 
 
 def test_camera_focus_pan_and_fit_all(page):
     pg, errs = page
+    pg.wait_for_function(GLIDE_DONE, timeout=GLIDE_WAIT)
     x, y = pg.evaluate(WHERE, "spinal_cord")
-    pg.mouse.dblclick(x, y); pg.wait_for_timeout(1500)
+    pg.mouse.dblclick(x, y); pg.wait_for_function(GLIDE_DONE, timeout=GLIDE_WAIT)
     f = pg.evaluate(FOCUSED)
     assert "Orbiting around" in f["tag"] and f.get("off", 99) < 5, f      # orbit centre = the clicked part
     t0, d0 = pg.evaluate("window.__bv.controls.target.toArray()"), pg.evaluate(DIST)
@@ -75,7 +80,7 @@ def test_camera_focus_pan_and_fit_all(page):
     assert sum((a - b) ** 2 for a, b in zip(t0, t1)) ** 0.5 > 2 and abs(d1 - d0) / d0 < 0.02, (t0, t1, d0, d1)  # pan, no zoom
     pg.keyboard.press("0")                                                 # fit all steps back to show head + neck
     pg.wait_for_function("(d) => window.__bv.camera.position.distanceTo(window.__bv.controls.target) > d",
-                         arg=d1 * 1.3, timeout=20_000)                     # the 0.7 s glide is slow under headless rAF
+                         arg=d1 * 1.3, timeout=GLIDE_WAIT)                 # the 0.7 s glide is slow under headless rAF
     assert not errs, errs
 
 
@@ -106,7 +111,7 @@ def test_palette_finds_commands_and_parts(page):
     pg.keyboard.type("export"); assert "Export for 3D printing" in pg.inner_text("#palList")
     pg.fill("#palIn", "C5"); pg.wait_for_timeout(100)
     assert "C5" in pg.inner_text("#palList").split("\n")[0]                 # a body part comes first
-    pg.keyboard.press("Enter"); pg.wait_for_timeout(1500)
+    pg.keyboard.press("Enter"); pg.wait_for_function(GLIDE_DONE, timeout=GLIDE_WAIT)
     assert pg.is_hidden("#palette") and "C5" in pg.inner_text("#focusTag")   # Enter focuses that part
     assert not errs, errs
 
@@ -259,7 +264,7 @@ def test_trackpad_pinch_zooms_the_model_not_the_page(page):
     pg, errs = page
     errs.clear()
     pg.keyboard.press("0")   # a known, unclamped distance
-    pg.wait_for_timeout(1500)
+    pg.wait_for_function(GLIDE_DONE, timeout=GLIDE_WAIT)
     r = pg.evaluate(PINCH)
     assert r["wheel"] and r["d1"] > r["d0"] * 1.02, r              # ctrl-wheel on the canvas zooms the camera
     assert r["panel"] and abs(r["d2"] - r["d1"]) < 1e-6, r         # over a panel: page zoom blocked, camera untouched
