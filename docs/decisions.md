@@ -2,6 +2,20 @@
 
 Short log of decisions that shape BodyGlass. Newest first. Add an entry in the PR that makes or changes one.
 
+## 2026-11 Background work is queued per case, one heavy job at a time, and deletion waits for it
+Every background stage (quick model, detailed structures, other-scan alignment and veins, neck, upgrades of older
+cases at start) is a job that belongs to one case from the moment it is queued, and its progress updates only that
+job. `/api/state` lists each case's stages (queued, running, done, none, unavailable, error, interrupted) and the
+viewer reads only the case it shows. Memory-heavy work (SynthStrip, FastSurfer, TotalSegmentator) runs one job at a
+time, first come first served, so a second scan's quick model is built before the first scan's structures;
+alignment runs one at a time beside it, as before. Adding another scan while one is processing now queues it
+instead of refusing; adding a scan whose case is already being built is still refused. Deleting a model with queued
+or running work answers 409; queueing work, renaming and the skin update are refused while a deletion is in
+progress, and follow-up work needs the case's manifest, so a deleted case is never written again. Deleting a model
+never touches the scan folder. A marker file in the case folder records a running stage; one left by a closed app
+shows as "interrupted" with a retry hint (add the scan again). A new Add scan of the same folder after a deletion
+builds the model again, as the user asked.
+
 ## 2026-11 The local page refuses to be framed and only talks to its own server
 Every response from the local server, including errors, sends a CSP with `frame-ancestors 'none'`,
 `base-uri 'none'` and `form-action 'self'` on top of the existing `'self'`-only directives, plus

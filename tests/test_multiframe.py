@@ -118,7 +118,7 @@ def test_multiframe_without_positions_is_rejected_with_a_plain_message(tmp_path)
     assert s.excluded == "multi-frame file without slice positions" and pick_t1([s]) is None
     with pytest.raises(RuntimeError, match="no slice positions"):
         load_series(s.files)
-    reply, code = server.add_scan(str(tmp_path), str(tmp_path / "cases"))
+    reply, code = server.add_scan(None, str(tmp_path), str(tmp_path / "cases"))
     assert code == 400 and "multi-frame DICOM file BodyGlass can't read" in reply["error"]
 
 
@@ -138,7 +138,7 @@ def test_classic_series_is_unsupported_if_any_file_cannot_be_decoded(tmp_path, w
     (s,) = scan_folder(str(tmp_path))
     assert len(s.files) == N and pick_t1([s]) is None
     assert "MPEG-4 AVC/H.264" in s.excluded and "1.2.840.10008.1.2.4.102" in s.excluded
-    reply, code = server.add_scan(str(tmp_path), str(tmp_path / "cases"))
+    reply, code = server.add_scan(None, str(tmp_path), str(tmp_path / "cases"))
     assert code == 400 and s.excluded in reply["error"]
 
 

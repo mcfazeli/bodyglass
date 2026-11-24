@@ -57,7 +57,10 @@ DICOM folder
                      · parcels.u8: nearest DKT gyrus within 4 mm of cortex, so a click names the gyrus
                    37 GLBs (~0.85–0.95 M triangles, ~16 MB) + manifest.structures / structureInfo / parcels
  └─ server.py      serves web/ and the case folder; JSON API: /api/open, /api/choose-folder (macOS
-                   folder dialog via osascript), /api/state (progress), /api/cases
+                   folder dialog via osascript), /api/state (each case's stages), /api/cases
+ └─ jobs.py        every background stage (phase1, phase2, sequences, neck, upgrade) is a job owned by one
+                   case; "heavy" lane (SynthStrip, FastSurfer, TotalSegmentator) runs one at a time, "align"
+                   lane (scan alignment, veins, upgrades) one at a time beside it; first come, first served
 ```
 Cached cases live in `~/Library/Application Support/BodyGlass/cases/<hash of SeriesInstanceUID>/`
 and never leave the Mac. Delete that folder to remove everything.
@@ -251,10 +254,11 @@ not part of this table.
 * **Settings** are `BODYGLASS_*` env vars. `install.sh` removes files that older releases leave behind when an update is copied over
   the installed folder. TotalSegmentator is run as `[sys.executable, script]` so stale `#!` lines can't break it.
 * **Add scan:** `neck.route(series)` → brain T1 (pick_t1 on non-spine series) and neck (spine-labelled series; all
-  series when no brain T1). `POST /api/add` starts the brain build with the neck chained in the same worker, or adds
-  a neck to the open model. `POST /api/rebuild` = "Use for 3D instead" (`pipeline.run(uid=…)`, `manifest.sourceFolder`).
+  series when no brain T1). `POST /api/add` queues the brain build, then its structures and the neck, or adds
+  a neck to the open model; replies carry the `caseId` the viewer then polls. `POST /api/rebuild` = "Use for 3D instead" (`pipeline.run(uid=…)`, `manifest.sourceFolder`).
 * **Library:** a person = a case. `GET /api/cases` returns name/exams/dates; `POST /api/case/rename|delete`,
-  `POST /api/reveal` (Finder). All behind the same Host/Origin check.
+  `POST /api/reveal` (Finder). All behind the same Host/Origin check. Delete answers 409 while the case has
+  queued or running work; no new work is admitted for a case while it is being deleted.
 * **Mouth:** `segment.seal_face` (10 mm closing, only in front of / below the brain centre, ±35 mm of the midline);
   `skinVersion: 2`; `POST /api/reskin` rebuilds only `skin.glb` for models made before the mouth smoothing.
 * **Front end:** left rail (Explore/Layers/Scans/About), right inspector on

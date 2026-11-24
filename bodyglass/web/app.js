@@ -569,7 +569,7 @@ async function useFor3D(uid) {
   if (!confirm(`Build a new 3D model from “${s.description}”?\nThe current model stays in My body.`)) return;
   const r = await fetch('api/rebuild', { method: 'POST', body: JSON.stringify({ caseId: currentCase, seriesUid: uid }) }).then((x) => x.json());
   if (r.error) return toast(escH(r.error), 'err');
-  toast('Building a new 3D model…'); pollProcessing();
+  toast('Building a new 3D model…'); pollProcessing(r.caseId);
 }
 // models built before the mouth fix: offer the quick skin-only rebuild once (nothing else is redone)
 function offerReskin() {
@@ -702,17 +702,17 @@ function cycleSeq(dir = 1) {
 async function pollSequences() {
   if (!currentCase || !manifest) return;
   const isCurrent = caseGuard();
-  const st = (await (await fetch('api/state')).json()).sequences || {};
+  const st = jobOf(await (await fetch('api/state')).json(), currentCase, 'sequences');
   if (!isCurrent()) return;
   if (!seqPending().length && (manifest.veins || !sequences().some((q) => q.kind === 'swi' || q.kind === 'mip'))) return;
-  const active = st.status === 'running' && st.caseId === currentCase;
+  const active = st.status === 'running';
   seqProgress = active ? `${Math.round(st.pct)}%` : '';
   const m = await (await fetch(`${caseBase()}manifest.json`)).json();
   if (!isCurrent()) return;
   if ((m.sequences || []).length !== sequences().length) { manifest.sequences = m.sequences; }
   if (m.veins && !manifest.veins) { manifest.veins = m.veins; addVeinsLive(); }
   buildScansUI();
-  if (active || st.status === 'idle') setTimeout(pollSequences, 2500);
+  if (active || !st.status || st.status === 'queued') setTimeout(pollSequences, 2500);
   else if (seqPending().length || (!manifest.veins && st.status === 'running')) { $('#scanNote').textContent = st.status === 'error' ? 'Some scans could not be lined up.' : ''; }
 }
 
@@ -1059,14 +1059,16 @@ function showNeckCard() {
 async function addNeck(cid = currentCase) {   // library → neck exam → "Replace with another folder"
   const j = await (await fetch('api/neck', { method: 'POST', body: JSON.stringify({ caseId: cid }) })).json();
   if (j.error) return toast(escH(j.error), 'err');
-  if (j.folder) { closeLibrary(); toast('Adding the neck exam…'); pollNeck(); }
+  if (j.folder) { closeLibrary(); toast('Adding the neck exam…'); pollNeck(cid); }
 }
-async function pollNeck() {
-  const N = (await (await fetch('api/state')).json()).neck || {};
-  if (N.status === 'running') { liveStatus('neck', `Neck exam: ${N.msg}… ${Math.round(N.pct)}%`); setTimeout(pollNeck, 1500); return; }
+async function pollNeck(cid) {   // cid's neck exam; its progress shows only while that case is open
+  const N = jobOf(await (await fetch('api/state')).json(), cid, 'neck');
+  if (ACTIVE.includes(N.status)) { liveStatus('neck', cid !== currentCase ? '' : N.status === 'queued' ? 'Neck exam: waiting for other work to finish…' : `Neck exam: ${N.msg}… ${Math.round(N.pct)}%`); setTimeout(() => pollNeck(cid), 1500); return; }
   liveStatus('neck');
-  if (N.status === 'done' && N.caseId === currentCase) { await loadCase(currentCase, true); showNeckCard(); toast(manifest.neck && manifest.neck.status === 'ok' ? '✓ Neck added and lined up' : 'The neck exam could not be lined up (see the card)'); }
+  if (cid !== currentCase) return;
+  if (N.status === 'done') { await loadCase(currentCase, true); showNeckCard(); toast(manifest.neck && manifest.neck.status === 'ok' ? '✓ Neck added and lined up' : 'The neck exam could not be lined up (see the card)'); }
   else if (N.status === 'error') toast(`${escH(N.msg)} (${escH(N.error)})`, 'err', 9000);
+  else if (N.status === 'interrupted') toast(escH(N.msg), 'err', 9000);
 }
 
 // ---------- Add scan (sorted automatically) and the "My body" library
@@ -1077,10 +1079,10 @@ async function addScan(cid) {
   busy.remove();
   if (j.error) return toast(escH(j.error), 'err', 9000);
   if (!j.folder) return;
-  if (j.route === 'neck') { toast(`Adding “${escH(j.neck)}” as the neck exam…`); return pollNeck(); }
+  if (j.route === 'neck') { toast(`Adding “${escH(j.neck)}” as the neck exam…`); return pollNeck(j.caseId); }
   toast(j.route === 'both' ? `Found a head scan and a neck scan. Building your 3D model first, then the neck…` : 'Building your 3D model…');
-  firstBuild = true; pollProcessing();
-  if (j.route === 'both') setTimeout(function waitNeck() { fetch('api/state').then((r) => r.json()).then((s) => (s.neck.status === 'running' ? pollNeck() : s.status === 'running' || s.phase2.status === 'running' ? setTimeout(waitNeck, 3000) : null)); }, 3000);
+  firstBuild = true; pollProcessing(j.caseId);
+  if (j.route === 'both') setTimeout(function waitNeck() { fetch('api/state').then((r) => r.json()).then((s) => (jobOf(s, j.caseId, 'neck').status ? pollNeck(j.caseId) : ['phase1', 'phase2'].some((k) => ACTIVE.includes(jobOf(s, j.caseId, k).status)) ? setTimeout(waitNeck, 3000) : null)); }, 3000);
 }
 $('#btnAdd').onclick = () => addScan(currentCase);
 $('#aToMe').onclick = () => addScan(currentCase);
@@ -1695,26 +1697,35 @@ async function loadCase(cid, keepCam) {
 }
 let currentCase = null, caseVersion = 0, renderedCase = null;
 const caseGuard = () => { const version = caseVersion; return () => version === caseVersion; };
-async function pollPhase2() {
-  const s = await (await fetch('api/state')).json();
-  const P = s.phase2 || {};
-  if (P.status === 'running') { liveStatus('p2', `Adding detailed structures on this computer… ${Math.round(P.pct)}%`); setTimeout(pollPhase2, 2000); return; }
+// /api/state lists each case's stages (phase1, phase2, sequences, neck) separately; read only the case asked for
+const ACTIVE = ['queued', 'running'];
+const jobOf = (s, cid, kind) => ((s.jobs || {})[cid] || {})[kind] || {};
+const newestBuild = (s) => Object.values(s.jobs || {}).map((j) => j.phase1).filter((j) => j && [...ACTIVE, 'interrupted'].includes(j.status)).sort((a, b) => b.id - a.id)[0]?.caseId;   // interrupted ones are older: listed at start
+async function pollPhase2(cid = currentCase, isCurrent = caseGuard()) {   // stops when another case is opened
+  const P = jobOf(await (await fetch('api/state')).json(), cid, 'phase2');
+  if (!isCurrent()) return liveStatus('p2');
+  if (ACTIVE.includes(P.status)) { liveStatus('p2', P.status === 'queued' ? 'Detailed structures: waiting for other work to finish…' : `Adding detailed structures on this computer… ${Math.round(P.pct)}%`); setTimeout(() => pollPhase2(cid, isCurrent), 2000); return; }
   liveStatus('p2');
-  if (P.status === 'done' && currentCase && !hasStructs()) { await loadCase(currentCase, true); toast('✓ Detailed structures ready'); }
-  else if (P.status === 'error') toast(escH(P.msg || 'Adding the detailed structures failed; the basic model still works'), 'err', 9000);
+  if (P.status === 'done' && !hasStructs()) { await loadCase(cid, true); toast('✓ Detailed structures ready'); }
+  else if (P.status === 'error' || P.status === 'interrupted') toast(escH(P.msg || 'Adding the detailed structures failed; the basic model still works'), 'err', 9000);
 }
-async function pollProcessing() {
+async function pollProcessing(cid) {   // the quick model of cid (on start: the newest one being built)
   const s = await (await fetch('api/state')).json();
-  if (s.status === 'running') { hideWelcome(); setLoading(true, s.msg, s.pct); showSteps(s.pct); setTimeout(pollProcessing, 600); }
-  else if (s.status === 'done' && s.caseId) {
-    const fresh = s.caseId !== currentCase || !manifest;
-    history.replaceState(null, '', '?case=' + s.caseId); await loadCase(s.caseId);
+  cid = cid || newestBuild(s);
+  const J = jobOf(s, cid, 'phase1'), waiting = J.status === 'queued' && manifest;   // keep the open model usable while it waits
+  liveStatus('p1', waiting ? 'Next 3D model: waiting for the other scan to finish…' : '');
+  if (waiting) setTimeout(() => pollProcessing(cid), 1500);
+  else if (ACTIVE.includes(J.status)) { hideWelcome(); setLoading(true, J.status === 'queued' ? 'Waiting for the other scan to finish' : J.msg, J.pct); showSteps(J.pct); setTimeout(() => pollProcessing(cid), 600); }
+  else if (J.status === 'done') {
+    const fresh = cid !== currentCase || !manifest;
+    history.replaceState(null, '', '?case=' + cid); await loadCase(cid);
     $('#steps').classList.add('hidden');
     if (firstBuild && fresh) { firstBuild = false; toast('✓ Your 3D model is ready. Detailed structures follow in the background.'); maybeAutoTour(); }
     if (!hasStructs()) pollPhase2();
   }
-  else if (s.status === 'error' && firstBuild) { firstBuild = false; setLoading(false); toast(escH(s.error), 'err', 10000); if (!manifest) showWelcome(); }
-  return s;
+  else if (J.status === 'error' && firstBuild) { firstBuild = false; setLoading(false); toast(escH(J.error || J.msg), 'err', 10000); if (!manifest) showWelcome(); }
+  else if (J.status === 'interrupted') toast(escH(J.msg), 'err', 10000);   // e.g. the app was closed mid-build
+  return J;
 }
 let firstBuild = false;
 $('#btnReset').onclick = resetView;
@@ -2201,15 +2212,15 @@ aiLoad().then(renderAskButton).catch(() => {});   // shows setup progress on the
 window.__bv = { ex, tour, layers, planes, THREE, structById, centered, camera, controls, seqData, cmp };
 
 // ---------- boot (+ deterministic states for screenshots)
-fetch('api/state').then((r) => r.json()).then((st) => { serverMac = !!st.mac; $('#tourVoice').classList.toggle('hidden', !serverMac); neckAvail = !!st.neckAvailable; if (st.neck && st.neck.status === 'running') pollNeck(); });
+fetch('api/state').then((r) => r.json()).then((st) => { serverMac = !!st.mac; $('#tourVoice').classList.toggle('hidden', !serverMac); neckAvail = !!st.neckAvailable; for (const [cid, J] of Object.entries(st.jobs || {})) if (ACTIVE.includes((J.neck || {}).status)) pollNeck(cid); });
 (async () => {
   let cid = params.get('case');
   const st = cid ? { status: 'skip' } : await pollProcessing();   // an explicit ?case= opens that cached case
-  if (!cid && st.status !== 'running') {
+  if (!cid && !ACTIVE.includes(st.status)) {
     const cases = await (await fetch('api/cases')).json();
     cid = cases.length ? cases[cases.length - 1].caseId : null;
   }
-  if (st.status === 'running') return;
+  if (ACTIVE.includes(st.status)) return;
   if (!cid) { setLoading(false); showWelcome(); return; }
   await loadCase(cid);
   if (!hasStructs()) pollPhase2();
