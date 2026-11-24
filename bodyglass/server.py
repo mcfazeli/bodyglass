@@ -202,10 +202,13 @@ def make_handler(cases_root, jobs):
 
         def end_headers(self):
             self.send_header("Cache-Control", "no-store")
-            # the page may only talk to this local server
+            # the page may only talk to this local server, and no other site may frame it (clickjacking)
             self.send_header("Content-Security-Policy",
                              "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; "
-                             "script-src 'self'; connect-src 'self' blob: data:; worker-src 'self' blob:")
+                             "script-src 'self'; connect-src 'self' blob: data:; worker-src 'self' blob:; "
+                             "frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Referrer-Policy", "no-referrer")
             super().end_headers()
 
         def _trusted(self):
