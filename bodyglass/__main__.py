@@ -21,7 +21,10 @@ def main():
                          f"Close the other window, or start with: ./BodyGlass.command --port {a.port + 1}")
     root = a.cases or server.default_cases_root()
     if a.folder:
-        server.start_processing(os.path.abspath(os.path.expanduser(a.folder)), root)
+        try:
+            server.start_processing(httpd.jobs, os.path.abspath(os.path.expanduser(a.folder)), root)
+        except (ValueError, OSError) as e:   # no 3D T1 or unreadable folder: the viewer still opens
+            print(e)
     url = f"http://127.0.0.1:{a.port}/"
     print(f"BodyGlass running at {url}  (local only; Ctrl+C to quit)")
     print(f"Your saved models are stored in: {root}")

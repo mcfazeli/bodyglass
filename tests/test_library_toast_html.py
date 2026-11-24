@@ -24,7 +24,7 @@ var document = {createElement: () => ({innerHTML: '', querySelector: () => handl
 var toast = text => { notices.push(text); return {remove() {}}; };
 var liveStatus = () => {}, loadCase = async () => {}, setLoading = () => {}, showWelcome = () => {};
 var hideWelcome = () => {}, showSteps = () => {}, hasStructs = () => true;
-var manifest = null, currentCase = 'c1', firstBuild = true, neckAvail = false;
+var manifest = null, currentCase = 'c1', firstBuild = true, neckAvail = false, caseVersion = 0;
 var fetch = async url => ({json: async () => (REPLY)[url]});
 """
 
@@ -33,7 +33,8 @@ def run(reply, functions, call):
     """Run the named top-level app.js functions and a call with stubs; return what reached the page."""
     source = APP.read_text()
     code = re.search(r"^const escH = .*", source, re.M).group() + STUBS.replace("REPLY", json.dumps(reply))
-    code += re.search(r"^const fmtDate = .*", source, re.M).group()
+    for const in ("fmtDate", "caseGuard", "ACTIVE", "jobOf", "newestBuild"):
+        code += "\n" + re.search(rf"^const {const} = .*", source, re.M).group()
     for name in functions:
         start = source.index(f"\nasync function {name}(")
         code += source[start:source.index("\n}\n", start) + 3]
@@ -76,19 +77,20 @@ def test_crafted_transfer_syntax_uid_in_the_no_usable_scan_message_is_text(tmp_p
     ds.PixelData = encapsulate([b"\x00" * 8] * int(ds.NumberOfFrames))
     ds["PixelData"].VR = "OB"
     ds.save_as(p, enforce_file_format=True)
-    reply, code = server.add_scan(str(tmp_path), str(tmp_path / "cases"))
+    reply, code = server.add_scan(None, str(tmp_path), str(tmp_path / "cases"))
     assert code == 400 and uid in reply["error"]
     # Shown on Add scan, and by the processing poll when a rebuild fails with the same message.
-    for call in ["addScan('c1')", "pollProcessing()"]:
-        (notice,) = run({"api/add": reply, "api/state": dict(status="error", **reply)}, ["addScan", *POLLS], call)["notices"][1 if call.startswith("add") else 0:]
+    state = {"jobs": {"c1": {"phase1": dict(status="error", error=reply["error"])}}}
+    for call in ["addScan('c1')", "pollProcessing('c1')"]:
+        (notice,) = run({"api/add": reply, "api/state": state}, ["addScan", *POLLS], call)["notices"][1 if call.startswith("add") else 0:]
         assert "".join(assert_safe(notice).text) == reply["error"]
 
 
-@pytest.mark.parametrize("state, call", [
-    ({"neck": dict(status="error", msg=HOSTILE, error=HOSTILE)}, "pollNeck()"),
+@pytest.mark.parametrize("job, call", [
+    ({"neck": dict(status="error", msg=HOSTILE, error=HOSTILE)}, "pollNeck('c1')"),
     ({"phase2": dict(status="error", msg=HOSTILE)}, "pollPhase2()"),
-    (dict(status="error", error=HOSTILE), "pollProcessing()"),
+    ({"phase1": dict(status="error", error=HOSTILE)}, "pollProcessing('c1')"),
 ])
-def test_background_job_errors_are_text(state, call):
-    (notice,) = run({"api/state": state}, POLLS, call)["notices"]
+def test_background_job_errors_are_text(job, call):
+    (notice,) = run({"api/state": {"jobs": {"c1": job}}}, POLLS, call)["notices"]
     assert HOSTILE in "".join(assert_safe(notice).text)

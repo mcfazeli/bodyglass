@@ -4,28 +4,25 @@ Binds to 127.0.0.1 only. Nothing is ever uploaded anywhere.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import platform
 import shutil
 import subprocess
-import threading
 import traceback
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlparse
 
 from . import ai_chat, ai_models, airclean, export3d, manifest_io, neck, phase2, pipeline, sequences, siwc, veins
-from .dicom_scan import scan_folder
+from .dicom_scan import pick_t1, scan_folder
+from .jobs import Busy, Jobs
 
 EXAMPLE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "example")
 
-_START = threading.Lock()
-BUSY = "Already processing a scan. Please wait until it has finished."
+BUSY = "This scan is already being processed. Please wait until it has finished."
+DELETING = "This model is being deleted."
 WEB = os.path.join(os.path.dirname(__file__), "web")
-STATE = {"status": "idle", "pct": 0, "msg": "", "caseId": None, "error": None,
-         "phase2": {"status": "idle", "pct": 0, "msg": "", "error": None},
-         "sequences": {"status": "idle", "pct": 0, "msg": "", "error": None, "caseId": None},
-         "neck": {"status": "idle", "pct": 0, "msg": "", "error": None, "caseId": None}}
 
 
 def app_dir():
@@ -39,34 +36,30 @@ def default_cases_root():
     return os.environ.get("BODYGLASS_CASES") or os.path.join(app_dir(), "cases")
 
 
-def start_processing(folder, cases_root, uid=None, then=None):
-    """Returns False if a scan is already being processed (one at a time: RAM and the shared STATE)."""
-    # shortcut: only Phase 1 is guarded; a new scan's FastSurfer can overlap the previous one's (~2 x 4 GB), queue Phase 2 if 16 GB Macs need it
-    with _START:
-        if STATE["status"] == "running" or STATE["neck"]["status"] == "running":
-            return False
-        STATE.update(status="running", pct=0, msg="Starting", error=None, caseId=None)
+def start_processing(jobs, folder, cases_root, uid=None, then=None):
+    """Queue the quick 3D model of a folder's T1 (or of series uid) and the work that follows it; returns the
+    case id. Raises jobs.Busy if that case is already being built, ValueError if the folder has no 3D T1."""
+    if uid is None:
+        best = pick_t1(scan_folder(folder))
+        if best is None:
+            raise ValueError("No 3D T1-weighted series found in this folder.")
+        uid = best.uid
+    cid = pipeline.case_id_for(uid)
+    case_dir = os.path.join(cases_root, cid)
 
-    def prog(pct, msg):
-        STATE.update(pct=pct, msg=msg)
-
-    def work():
-        try:
-            cid = pipeline.run(folder, cases_root, prog, uid=uid)
-            STATE.update(status="done", caseId=cid)
-        except Exception as e:  # report to UI
-            traceback.print_exc()
-            STATE.update(status="error", error=str(e))
-            return
-        case_dir = os.path.join(cases_root, cid)
-        # other scans are aligned alongside the structure labelling (both read the finished T1 grid)
-        threading.Thread(target=run_sequences, args=(case_dir,), daemon=True).start()
-        run_phase2(case_dir)
-        if then:   # e.g. the neck part of the same 'Add scan' folder
+    def phase2_then(up):
+        run_phase2(case_dir, up)
+        if then:   # e.g. the neck part of the same 'Add scan' folder, after the structures as before
             then(case_dir)
 
-    threading.Thread(target=work, daemon=True).start()
-    return True
+    def work(up):
+        pipeline.run(folder, cases_root, up, uid=uid)
+        # queued while this job still counts as running, so a deletion cannot slip in between
+        jobs.quietly(cid, "sequences", lambda up: run_sequences(case_dir, up), "align")
+        jobs.quietly(cid, "phase2", phase2_then, "heavy")
+
+    jobs.submit(cid, "phase1", work, "heavy", new_case=True)
+    return cid
 
 
 def read_manifest(cases_root, cid):
@@ -90,12 +83,10 @@ def source_folder(case_dir, m):
         return None
 
 
-def run_phase2(case_dir):
+def run_phase2(case_dir, up):
     """Labelled structures (FastSurfer) after the quick Phase 1 model is already on screen."""
-    P = STATE["phase2"]
     if os.environ.get("BODYGLASS_PHASE2", "1") == "0" or not phase2.available():
-        P.update(status="unavailable", msg="Structure labelling is not installed")
-        return
+        return up(status="unavailable", msg="Structure labelling is not installed")
     with open(os.path.join(case_dir, "manifest.json")) as fh:
         m = json.load(fh)
     if m.get("structures"):
@@ -104,63 +95,47 @@ def run_phase2(case_dir):
                 phase2.backfill_labels(case_dir)
             except Exception:
                 traceback.print_exc()
-        P.update(status="done", pct=100, msg="Structures ready")
-        return
-    P.update(status="running", pct=1, msg="Labelling structures", error=None)
+        return up(msg="Structures ready")
+    up(1, "Labelling structures")
     try:
-        phase2.build(case_dir, lambda pct, msg: P.update(pct=pct, msg=msg),
-                     device=os.environ.get("BODYGLASS_DEVICE", "auto"))
-        P.update(status="done", pct=100, msg="Structures ready")
+        phase2.build(case_dir, up, device=os.environ.get("BODYGLASS_DEVICE", "auto"))
+        up(100, "Structures ready")
     except Exception as e:
         traceback.print_exc()
-        P.update(status="error", error=str(e), msg="Structure labelling failed; the basic model still works")
+        up(status="error", error=str(e), msg="Structure labelling failed; the basic model still works")
 
 
-def run_sequences(case_dir):
-    S = STATE["sequences"]
-    S.update(caseId=os.path.basename(case_dir), error=None)
+def run_sequences(case_dir, up):
     if not os.path.exists(os.path.join(case_dir, "series.json")):
-        S.update(status="none", msg="No other scans in this folder")
-        return
-    S.update(status="running", pct=1, msg="Aligning other scans")
+        return up(status="none", msg="No other scans in this folder")
+    up(1, "Aligning other scans")
     try:
-        out = sequences.build(case_dir, lambda pct, msg: S.update(pct=pct * 0.8, msg=msg))
+        out = sequences.build(case_dir, lambda pct, msg: up(pct * 0.8, msg))
         if any(q.get("kind") in ("swi", "mip") for q in out):
-            S.update(pct=80, msg="Tracing veins from the SWI scan")
+            up(80, "Tracing veins from the SWI scan")
             try:
                 veins.build(case_dir)
             except Exception:
                 traceback.print_exc()
-        S.update(status="done" if out else "none", pct=100, msg=f"{len(out)} scans aligned" if out else "No other scans")
+        up(100, f"{len(out)} scans aligned" if out else "No other scans", **({} if out else {"status": "none"}))
     except Exception as e:
         traceback.print_exc()
-        S.update(status="error", error=str(e), msg="Aligning the other scans failed; the T1 view still works")
+        up(status="error", error=str(e), msg="Aligning the other scans failed; the T1 view still works")
 
 
-def start_neck(case_dir, folder, uid=None):
-    """Second exam (neck) for an opened case. False if a scan or neck exam is already being processed."""
-    N = STATE["neck"]
-    with _START:
-        if STATE["status"] == "running" or N["status"] == "running":
-            return False
-        N.update(status="running", pct=0, msg="Starting", error=None, caseId=os.path.basename(case_dir))
-
-    threading.Thread(target=run_neck, args=(case_dir, folder, uid), daemon=True).start()
-    return True
-
-
-def run_neck(case_dir, folder, uid=None):
-    N = STATE["neck"]
-    N.update(status="running", pct=0, msg="Starting", error=None, caseId=os.path.basename(case_dir))
-    try:
-        info = neck.build(case_dir, folder, lambda pct, msg: N.update(pct=pct, msg=msg), uid=uid)
-        N.update(status="done", pct=100, msg="Neck ready" if info["status"] == "ok" else "Neck exam could not be lined up")
-    except Exception as e:
-        traceback.print_exc()
-        N.update(status="error", error=str(e), msg="Neck labelling failed; the brain model still works")
+def neck_work(case_dir, folder, uid=None):
+    """The neck exam (second exam) of a saved case, as a job."""
+    def work(up):
+        try:
+            info = neck.build(case_dir, folder, up, uid=uid)
+            up(100, "Neck ready" if info["status"] == "ok" else "Neck exam could not be lined up")
+        except Exception as e:
+            traceback.print_exc()
+            up(status="error", error=str(e), msg="Neck labelling failed; the brain model still works")
+    return work
 
 
-def add_scan(folder, cases_root, cid=None):
+def add_scan(jobs, folder, cases_root, cid=None):
     """'Add scan': sort a folder (brain exam, neck exam, or a whole export with both) and start the right work.
     Returns (reply, http code). shortcut: headers are read here and again by the pipeline (a few seconds)."""
     r = neck.route(series := scan_folder(folder))
@@ -168,18 +143,22 @@ def add_scan(folder, cases_root, cid=None):
     case_dir = os.path.join(cases_root, cid) if cid and read_manifest(cases_root, cid) else None
     desc = lambda s: s.meta.get("SeriesDescription") or "scan"
     if brain:
-        then = (lambda cd: run_neck(cd, folder, nk.uid)) if nk else None
-        if not start_processing(folder, cases_root, uid=brain.uid, then=then):
+        then = (lambda cd: jobs.quietly(os.path.basename(cd), "neck", neck_work(cd, folder, nk.uid), "heavy")) if nk else None
+        try:
+            new = start_processing(jobs, folder, cases_root, uid=brain.uid, then=then)
+        except Busy:
             return {"error": BUSY}, 409
-        return {"route": "both" if nk else "brain", "brain": desc(brain), "neck": nk and desc(nk)}, 200
+        return {"route": "both" if nk else "brain", "brain": desc(brain), "neck": nk and desc(nk), "caseId": new}, 200
     if r["neck"] and not nk:
         return {"error": "This folder holds a neck exam, but neck labelling is not installed. Run ./install.sh again to add it."}, 400
     if nk:
         if not case_dir:
             return {"error": "This folder holds a neck exam. Open the head model it belongs to first (My body), then add it."}, 400
-        if not start_neck(case_dir, folder, nk.uid):
+        try:
+            jobs.submit(cid, "neck", neck_work(case_dir, folder, nk.uid), "heavy")
+        except Busy:
             return {"error": BUSY}, 409
-        return {"route": "neck", "neck": desc(nk)}, 200
+        return {"route": "neck", "neck": desc(nk), "caseId": cid}, 200
     mf = {"multi-frame file without slice positions", "damaged or oversized multi-frame file"}
     hint = (" It holds a multi-frame DICOM file BodyGlass can't read ('Which scans are used?' says why)."
             if any(s.excluded in mf for s in series) else "")
@@ -198,18 +177,13 @@ def case_summary(cid, m):
             "name": (m.get("person") or {}).get("name") or "", "exams": exams, "structures": bool(m.get("structures"))}
 
 
-def busy_with(cid):
-    return any(S.get("status") == "running" and S.get("caseId") == cid
-               for S in (STATE, STATE["neck"], STATE["phase2"], STATE["sequences"]))
-
-
 def choose_folder_macos(prompt="Choose your DICOM folder (it stays on this Mac)"):
     script = f'POSIX path of (choose folder with prompt "{prompt}")'
     r = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
     return r.stdout.strip() or None
 
 
-def make_handler(cases_root):
+def make_handler(cases_root, jobs):
     # AI chat data: ~/Library/Application Support/BodyGlass/{models,chatgpt} (BODYGLASS_HOME moves it, e.g. for tests)
     ai_root = os.environ.get("BODYGLASS_HOME") or app_dir()
     models = ai_models.Manager(os.path.join(ai_root, "models"))
@@ -250,6 +224,14 @@ def make_handler(cases_root):
             self.end_headers()
             self.wfile.write(body)
 
+        def _start(self, folder, reply, uid=None):
+            try:
+                return self._json(dict(reply, caseId=start_processing(jobs, folder, cases_root, uid=uid)))
+            except Busy:
+                return self._json({"error": BUSY}, 409)
+            except ValueError as e:
+                return self._json({"error": str(e)}, 400)
+
         def translate_path(self, path):
             p = unquote(urlparse(path).path)
             if p.startswith("/example/"):
@@ -269,7 +251,7 @@ def make_handler(cases_root):
                 return self.send_error(403)
             p = urlparse(self.path).path
             if p == "/api/state":
-                return self._json(dict(STATE, mac=platform.system() == "Darwin", neckAvailable=neck.available(), casesRoot=cases_root))
+                return self._json(dict(jobs=jobs.snapshot(), mac=platform.system() == "Darwin", neckAvailable=neck.available(), casesRoot=cases_root))
             if p == "/api/example":
                 ej = os.path.join(EXAMPLE, "example.json")
                 if not os.path.exists(ej):
@@ -312,12 +294,10 @@ def make_handler(cases_root):
             if p == "/api/choose-folder":
                 if platform.system() != "Darwin":
                     return self._json({"error": "Folder dialog is macOS only; pass the folder on the command line."}, 400)
-                if STATE["status"] == "running":
-                    return self._json({"error": BUSY}, 409)
                 folder = choose_folder_macos()
-                if folder and not start_processing(folder, cases_root):
-                    return self._json({"error": BUSY}, 409)
-                return self._json({"folder": folder})
+                if not folder:
+                    return self._json({"folder": None})
+                return self._start(folder, {"folder": folder})
             if p == "/api/export":
                 cid = str(data.get("caseId", ""))
                 case_dir = os.path.join(cases_root, cid)
@@ -360,9 +340,11 @@ def make_handler(cases_root):
                         return self._json({"folder": None})
                 if not os.path.isdir(folder):
                     return self._json({"error": "folder not found"}, 400)
-                if not start_neck(case_dir, folder):
+                try:
+                    jobs.submit(cid, "neck", neck_work(case_dir, folder), "heavy")
+                except Busy:
                     return self._json({"error": BUSY}, 409)
-                return self._json({"folder": folder})
+                return self._json({"folder": folder, "caseId": cid})
             if p == "/api/rebuild":   # 'Use for 3D instead': another series of the same exam -> a new model
                 cid, uid = str(data.get("caseId", "")), str(data.get("seriesUid", ""))
                 m = read_manifest(cases_root, cid)
@@ -371,15 +353,16 @@ def make_handler(cases_root):
                 folder = source_folder(os.path.join(cases_root, cid), m)
                 if not folder or not os.path.isdir(folder):
                     return self._json({"error": "The original scan folder has moved. Use Add scan and choose it again."}, 400)
-                if not start_processing(folder, cases_root, uid=uid):
-                    return self._json({"error": BUSY}, 409)
-                return self._json({"ok": True})
+                return self._start(folder, {"ok": True}, uid)
             if p == "/api/reskin":   # skin-only rebuild with the mouth/nostril closing (older cases)
                 cid = str(data.get("caseId", ""))
-                if not read_manifest(cases_root, cid):
-                    return self._json({"error": "case not found"}, 400)
                 try:
-                    pipeline.reskin(os.path.join(cases_root, cid))
+                    with jobs.writing(cid):
+                        if not read_manifest(cases_root, cid):
+                            return self._json({"error": "case not found"}, 400)
+                        pipeline.reskin(os.path.join(cases_root, cid))
+                except Busy:
+                    return self._json({"error": DELETING}, 409)
                 except Exception as e:
                     traceback.print_exc()
                     return self._json({"error": f"Could not update the skin: {e}"}, 400)
@@ -389,15 +372,13 @@ def make_handler(cases_root):
                 if not folder:
                     if platform.system() != "Darwin":
                         return self._json({"error": "Folder dialog is macOS only; pass the folder on the command line."}, 400)
-                    if STATE["status"] == "running" or STATE["neck"]["status"] == "running":
-                        return self._json({"error": BUSY}, 409)
                     folder = choose_folder_macos("Choose a scan folder: head or neck MRI, or a whole export (it stays on this Mac)")
                     if not folder:
                         return self._json({"folder": None})
                 if not os.path.isdir(folder):
                     return self._json({"error": "folder not found"}, 400)
                 try:
-                    reply, code = add_scan(folder, cases_root, str(data.get("caseId") or ""))
+                    reply, code = add_scan(jobs, folder, cases_root, str(data.get("caseId") or ""))
                 except Exception as e:
                     traceback.print_exc()
                     return self._json({"error": f"Could not read this folder: {e}"}, 400)
@@ -410,18 +391,24 @@ def make_handler(cases_root):
                     if not read_manifest(cases_root, cid):
                         return self._json({"error": "case not found"}, 400)
                     path = os.path.join(cases_root, cid)
-                if p == "/api/case/rename":
-                    manifest_io.update(path, {"person": {"name": str(data.get("name", "")).strip()[:80]}})
-                elif p == "/api/case/delete":   # the 3D model only; the user's DICOM folder is never touched
-                    if busy_with(cid):
-                        return self._json({"error": "This model is still being worked on. Try again when it is finished."}, 409)
-                    real = os.path.realpath(path)
-                    if os.path.dirname(real) != os.path.realpath(cases_root):
-                        return self._json({"error": "case not found"}, 400)
-                    shutil.rmtree(real)
-                elif platform.system() == "Darwin":
-                    os.makedirs(path, exist_ok=True)
-                    subprocess.run(["open", "-R", path] if cid else ["open", path])
+                try:
+                    if p == "/api/case/delete":   # the 3D model only; the user's DICOM folder is never touched
+                        real = os.path.realpath(path)
+                        if os.path.dirname(real) != os.path.realpath(cases_root):
+                            return self._json({"error": "case not found"}, 400)
+                        jobs.delete(cid, lambda: os.path.isdir(real) and shutil.rmtree(real))
+                    elif p == "/api/case/rename" or platform.system() == "Darwin":
+                        with jobs.writing(cid) if cid else contextlib.nullcontext():
+                            if cid and not read_manifest(cases_root, cid):   # deleted meanwhile: never recreate it
+                                return self._json({"error": "case not found"}, 400)
+                            if p == "/api/case/rename":
+                                manifest_io.update(path, {"person": {"name": str(data.get("name", "")).strip()[:80]}})
+                            else:
+                                os.makedirs(path, exist_ok=True)
+                                subprocess.run(["open", "-R", path] if cid else ["open", path])
+                except Busy:
+                    return self._json({"error": DELETING if cid in jobs.deleting else
+                                       "This model is still being worked on. Try again when it is finished."}, 409)
                 return self._json({"ok": True, "path": path})
             if p.startswith("/api/ai/"):
                 return self._ai_post(p, data)
@@ -429,9 +416,7 @@ def make_handler(cases_root):
                 folder = data.get("folder")
                 if not folder or not os.path.isdir(folder):
                     return self._json({"error": "folder not found"}, 400)
-                if not start_processing(folder, cases_root):
-                    return self._json({"error": BUSY}, 409)
-                return self._json({"ok": True})
+                return self._start(folder, {"ok": True})
             self._json({"error": "not found"}, 404)
 
         def _stream(self, gen):
@@ -500,30 +485,30 @@ def make_handler(cases_root):
     return H
 
 
-def _backfill_all(cases_root):
-    """Older cached cases get labels.u8 for the slice overlay (seconds per case, uses cached FastSurfer output)."""
+def _backfill_all(jobs, cases_root):
+    """Older cached cases get labels.u8 for the slice overlay, missing scan alignments and the air cleanup
+    (seconds per case, from cached output). Queued as jobs so a case is never deleted mid-upgrade."""
     for cid in sorted(os.listdir(cases_root)):
-        mf = os.path.join(cases_root, cid, "manifest.json")
-        if not os.path.isfile(mf):
-            continue
-        try:
-            with open(mf) as fh:
+        case_dir = os.path.join(cases_root, cid)
+
+        def upgrade(up, case_dir=case_dir):
+            with open(os.path.join(case_dir, "manifest.json")) as fh:
                 m = json.load(fh)
             if m.get("structures") and not m.get("labelVolume"):
-                phase2.backfill_labels(os.path.join(cases_root, cid))
-            if os.path.exists(os.path.join(cases_root, cid, "series.json")):
-                sequences.build(os.path.join(cases_root, cid))   # cached: only restores/finishes what is missing
-                veins.build(os.path.join(cases_root, cid))       # cached
-            airclean.backfill(os.path.join(cases_root, cid))      # once per case
-        except Exception:
-            traceback.print_exc()
+                phase2.backfill_labels(case_dir)
+            airclean.backfill(case_dir)      # once per case
+        jobs.quietly(cid, "upgrade", upgrade, "align")   # skipped for folders without a manifest
+        if os.path.exists(os.path.join(case_dir, "series.json")):   # cached: only restores/finishes what is missing
+            jobs.quietly(cid, "sequences", lambda up, case_dir=case_dir: run_sequences(case_dir, up), "align")
 
 
 def serve(port=8765, cases_root=None):
     cases_root = cases_root or default_cases_root()
     os.makedirs(cases_root, exist_ok=True)
-    threading.Thread(target=_backfill_all, args=(cases_root,), daemon=True).start()
-    handler = make_handler(cases_root)
+    jobs = Jobs(cases_root)
+    _backfill_all(jobs, cases_root)
+    handler = make_handler(cases_root, jobs)
     handler.ai["models"].resume_unfinished()   # a download the user started keeps going after a restart
     httpd = ThreadingHTTPServer(("127.0.0.1", port), handler)
+    httpd.jobs = jobs
     return httpd
