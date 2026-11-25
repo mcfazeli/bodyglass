@@ -45,7 +45,8 @@ def page(tmp_path_factory):
         errs = []
         pg.on("pageerror", lambda e: errs.append(str(e)))
         pg.goto(f"http://127.0.0.1:{port}/?shot=1&case={CASE}&op=skin:0,skull:0")
-        pg.wait_for_function("window.__ready === true", timeout=300_000)
+        # cold load with every core saturated took up to ~640 s (software-rendered WebGL): wait well past that (#13)
+        pg.wait_for_function("window.__ready === true", timeout=1_200_000)
         pg.base = f"http://127.0.0.1:{port}/"; pg.browser_ = b; pg.httpd = httpd
         yield pg, errs
         b.close()

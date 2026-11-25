@@ -72,6 +72,8 @@ def register(fixed, moving, fmask=None, same_frame=True, threads=None):
 
     shortcut: rigid only; scans with patient motion between series or strong EPI distortion (DWI) keep
     a residual of a few mm. Add affine/B-spline only if overlays visibly drift."""
+    if threads is not None and (isinstance(threads, bool) or not isinstance(threads, int) or threads < 1):
+        raise ValueError(f"threads must be None (all cores) or a whole number of at least 1, not {threads!r}")
     import SimpleITK as sitk
     thick = max(moving.GetSpacing()) > 3.0   # 2D scans with thick slices: more samples, longer search
     t0 = time.time()
@@ -82,7 +84,7 @@ def register(fixed, moving, fmask=None, same_frame=True, threads=None):
     if same_frame:   # scanner coordinates already agree: start from the header (identity), keep the centre
         init = sitk.Euler3DTransform(init.GetCenter(), 0, 0, 0, (0, 0, 0))
     R = sitk.ImageRegistrationMethod()
-    if threads:
+    if threads is not None:
         R.SetNumberOfThreads(threads)
         R.SetNumberOfWorkUnits(threads)
     R.SetMetricAsMattesMutualInformation(numberOfHistogramBins=50)
