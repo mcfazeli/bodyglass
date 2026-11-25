@@ -2209,7 +2209,7 @@ $('#chatClose').onclick = closeChat;
 $('#infoAsk').onclick = () => { openChat(); };
 aiLoad().then(renderAskButton).catch(() => {});   // shows setup progress on the button after a restart
 
-window.__bv = { ex, tour, layers, planes, THREE, structById, centered, camera, controls, seqData, cmp };
+window.__bv = { ex, tour, layers, planes, THREE, structById, centered, camera, controls, seqData, cmp, ...(params.has('shot') && { gliding: () => !!camAnim }) };   // gliding: test hook, screenshot/test mode only
 
 // ---------- boot (+ deterministic states for screenshots)
 fetch('api/state').then((r) => r.json()).then((st) => { serverMac = !!st.mac; $('#tourVoice').classList.toggle('hidden', !serverMac); neckAvail = !!st.neckAvailable; for (const [cid, J] of Object.entries(st.jobs || {})) if (ACTIVE.includes((J.neck || {}).status)) pollNeck(cid); });

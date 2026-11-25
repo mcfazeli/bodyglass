@@ -6,7 +6,12 @@ import pytest
 from scipy import ndimage as ndi
 
 sitk = pytest.importorskip("SimpleITK")
-from bodyglass.sequences import register  # noqa: E402
+from bodyglass.sequences import register as _register  # noqa: E402
+
+
+def register(*a, **k):
+    """One thread: the multi-threaded metric sums in thread-finish order, so fits differ run to run (#13)."""
+    return _register(*a, threads=1, **k)
 
 
 def phantom():
@@ -43,6 +48,19 @@ def test_different_frame_large_offset_found_from_centre_of_mass():
     tx, info = register(img(a, (0, 0, 0)), img(a, (30.0, -20.0, 10.0)), same_frame=False)
     assert not info.get("rejected")
     assert np.allclose(tx.GetTranslation(), (30.0, -20.0, 10.0), atol=0.6)
+
+
+def test_one_thread_gives_the_same_fit_every_time():
+    a = phantom()
+    fits = [register(img(a, (0, 0, 0)), img(a, (4.0, -3.0, 2.0)))[0].GetParameters() for _ in range(2)]
+    assert fits[0] == fits[1], fits   # bit-identical, not just close (#13)
+
+
+@pytest.mark.parametrize("bad", [0, False, True, -1, 2.5, "2"])
+def test_thread_count_must_be_a_positive_whole_number(bad):
+    a = phantom()
+    with pytest.raises(ValueError, match="threads"):
+        _register(img(a, (0, 0, 0)), img(a, (0, 0, 0)), threads=bad)
 
 
 NECK = os.path.join(os.path.dirname(__file__), "..", "sample_data", "neck_ds001919", "")
